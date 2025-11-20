@@ -1,0 +1,870 @@
+import customtkinter as ctk
+import json
+import os
+from pathlib import Path
+import serial
+import serial.tools.list_ports
+
+class StreamDeckManager(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        
+        self.title("🎛️ Stream Deck Manager")
+        self.geometry("1400x850")
+        
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+        
+        # Config file
+        self.config_file = Path("streamdeck_config.json")
+        
+        # State
+        self.current_mode = 0
+        self.max_modes = 4
+        self.buttons_per_mode = 9
+        self.serial_port = None
+        
+        # Slider apps
+        self.slider_apps = ["", "", ""]
+        
+        # Load config
+        self.config = self.load_config()
+        
+        self.create_layout()
+        self.load_button_states()
+        self.load_slider_states()
+    
+    def create_layout(self):
+        # Header
+        header = ctk.CTkFrame(self, height=80, fg_color=("gray90", "gray15"))
+        header.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(
+            header,
+            text="🎮 Stream Deck + Audio Sliders",
+            font=("Roboto", 28, "bold")
+        ).pack(side="left", padx=20)
+        
+        # Serial status
+        self.serial_status = ctk.CTkLabel(
+            header,
+            text="❌ Not Connected",
+            font=("Roboto", 12),
+            fg_color=("gray80", "gray25"),
+            corner_radius=5,
+            width=120,
+            height=30
+        )
+        self.serial_status.pack(side="right", padx=5)
+        
+        self.serial_button = ctk.CTkButton(
+            header,
+            text="🔌 Connect",
+            command=self.connect_serial,
+            width=120,
+            height=40
+        )
+        self.serial_button.pack(side="right", padx=10)
+        
+        # Main container
+        main_container = ctk.CTkFrame(self)
+        main_container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # LEFT: Button Grid
+        left_panel = ctk.CTkFrame(main_container, width=650)
+        left_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        
+        # Mode selector
+        mode_frame = ctk.CTkFrame(left_panel, height=100)
+        mode_frame.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(
+            mode_frame,
+            text="🔄 Mode Selector (Draaiknop)",
+            font=("Roboto", 18, "bold")
+        ).pack(pady=(10, 5))
+        
+        mode_buttons_frame = ctk.CTkFrame(mode_frame, fg_color="transparent")
+        mode_buttons_frame.pack(pady=10)
+        
+        self.mode_buttons = []
+        for i in range(self.max_modes):
+            btn = ctk.CTkButton(
+                mode_buttons_frame,
+                text=f"Mode {i+1}",
+                command=lambda m=i: self.switch_mode(m),
+                width=120,
+                height=45,
+                font=("Roboto", 14, "bold")
+            )
+            btn.pack(side="left", padx=5)
+            self.mode_buttons.append(btn)
+        
+        # Button grid (3x3)
+        grid_frame = ctk.CTkFrame(left_panel)
+        grid_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.grid_title = ctk.CTkLabel(
+            grid_frame,
+            text=f"📱 Button Grid - Mode {self.current_mode + 1}",
+            font=("Roboto", 20, "bold")
+        )
+        self.grid_title.pack(pady=15)
+        
+        self.button_grid_frame = ctk.CTkFrame(grid_frame)
+        self.button_grid_frame.pack(pady=10, padx=20)
+        
+        self.button_widgets = []
+        for row in range(3):
+            for col in range(3):
+                btn_index = row * 3 + col
+                btn = self.create_button_widget(self.button_grid_frame, btn_index, row, col)
+                self.button_widgets.append(btn)
+        
+        # MIDDLE: Audio Sliders
+        middle_panel = ctk.CTkFrame(main_container, width=350)
+        middle_panel.pack(side="left", fill="both", padx=(0, 10))
+        
+        ctk.CTkLabel(
+            middle_panel,
+            text="🎚️ Audio Sliders",
+            font=("Roboto", 20, "bold")
+        ).pack(pady=15)
+        
+        ctk.CTkLabel(
+            middle_panel,
+            text="Koppel apps aan fysieke sliders\nvoor volume control",
+            font=("Roboto", 11),
+            text_color="gray"
+        ).pack(pady=(0, 10))
+        
+        self.slider_widgets = []
+        for i in range(3):
+            slider = self.create_slider_widget(middle_panel, i)
+            self.slider_widgets.append(slider)
+        
+        # RIGHT: Quick Actions + Info
+        right_panel = ctk.CTkFrame(main_container, width=350)
+        right_panel.pack(side="right", fill="both")
+        
+        ctk.CTkLabel(
+            right_panel,
+            text="⚡ Quick Actions",
+            font=("Roboto", 18, "bold")
+        ).pack(pady=15)
+        
+        quick_frame = ctk.CTkScrollableFrame(right_panel, height=300)
+        quick_frame.pack(fill="x", padx=10, pady=10)
+        
+        self.quick_actions = [
+            {"name": "Discord Mute", "icon": "🎤", "hotkey": "ctrl+shift+m"},
+            {"name": "Discord Deafen", "icon": "🔇", "hotkey": "ctrl+shift+d"},
+            {"name": "OBS Start/Stop", "icon": "⏺️", "hotkey": "ctrl+shift+r"},
+            {"name": "OBS Switch Scene", "icon": "🎬", "hotkey": "ctrl+shift+s"},
+            {"name": "Spotify Play/Pause", "icon": "⏯️", "hotkey": "ctrl+shift+p"},
+            {"name": "Volume Up", "icon": "🔊", "hotkey": "volumeup"},
+            {"name": "Volume Down", "icon": "🔉", "hotkey": "volumedown"},
+            {"name": "Mute Audio", "icon": "🔇", "hotkey": "volumemute"},
+            {"name": "Screenshot", "icon": "📸", "hotkey": "win+shift+s"},
+            {"name": "Task Manager", "icon": "⚙️", "hotkey": "ctrl+shift+esc"},
+        ]
+        
+        for action in self.quick_actions:
+            btn = ctk.CTkButton(
+                quick_frame,
+                text=f"{action['icon']} {action['name']}",
+                command=lambda a=action: self.show_quick_action_info(a),
+                height=45,
+                font=("Roboto", 13),
+                anchor="w",
+                fg_color=("gray70", "gray30"),
+                hover_color=("gray60", "gray40")
+            )
+            btn.pack(fill="x", pady=3, padx=5)
+        
+        # Info panel
+        info_frame = ctk.CTkFrame(right_panel)
+        info_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        ctk.CTkLabel(
+            info_frame,
+            text="ℹ️ Info",
+            font=("Roboto", 14, "bold")
+        ).pack(pady=10)
+        
+        self.info_label = ctk.CTkLabel(
+            info_frame,
+            text="Click een knop om te configureren\n\nOf kies een Quick Action en\nclick dan een knop",
+            font=("Roboto", 11),
+            wraplength=300,
+            justify="left"
+        )
+        self.info_label.pack(pady=10, padx=10)
+        
+        # Export/Import
+        button_frame = ctk.CTkFrame(right_panel, fg_color="transparent")
+        button_frame.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkButton(
+            button_frame,
+            text="📤 Export",
+            command=self.export_config,
+            height=35
+        ).pack(side="left", padx=5, expand=True, fill="x")
+        
+        ctk.CTkButton(
+            button_frame,
+            text="📥 Import",
+            command=self.import_config,
+            height=35
+        ).pack(side="right", padx=5, expand=True, fill="x")
+    
+    def create_button_widget(self, parent, btn_index, row, col):
+        """Maak een configureerbare button - VOLLEDIG klikbaar overal!"""
+        
+        # Outer container
+        outer_frame = ctk.CTkFrame(
+            parent,
+            width=160,
+            height=160,
+            fg_color="transparent"
+        )
+        outer_frame.grid(row=row, column=col, padx=10, pady=10)
+        outer_frame.grid_propagate(False)
+        
+        # Clickable button (hele oppervlak)
+        btn_frame = ctk.CTkFrame(
+            outer_frame,
+            width=160,
+            height=160,
+            corner_radius=15,
+            fg_color=("gray80", "gray25"),
+            border_width=3,
+            border_color=("gray70", "gray30")
+        )
+        btn_frame.place(x=0, y=0, relwidth=1, relheight=1)
+        
+        # BELANGRIJK: bind click op FRAME zelf
+        btn_frame.bind("<Button-1>", lambda e: self.configure_button(btn_index))
+        
+        # Icon
+        icon_label = ctk.CTkLabel(
+            btn_frame,
+            text="➕",
+            font=("Segoe UI Emoji", 45),
+            cursor="hand2"
+        )
+        icon_label.place(relx=0.5, rely=0.35, anchor="center")
+        icon_label.bind("<Button-1>", lambda e: self.configure_button(btn_index))
+        
+        # Action label
+        action_label = ctk.CTkLabel(
+            btn_frame,
+            text="Not Set",
+            font=("Roboto", 11, "bold"),
+            wraplength=140,
+            cursor="hand2"
+        )
+        action_label.place(relx=0.5, rely=0.65, anchor="center")
+        action_label.bind("<Button-1>", lambda e: self.configure_button(btn_index))
+        
+        # Hotkey label
+        hotkey_label = ctk.CTkLabel(
+            btn_frame,
+            text="",
+            font=("Courier", 9),
+            fg_color=("gray70", "gray35"),
+            corner_radius=5,
+            height=25,
+            width=140,
+            cursor="hand2"
+        )
+        hotkey_label.place(relx=0.5, rely=0.85, anchor="center")
+        hotkey_label.bind("<Button-1>", lambda e: self.configure_button(btn_index))
+        
+        # Button nummer
+        num_label = ctk.CTkLabel(
+            btn_frame,
+            text=f"#{btn_index + 1}",
+            font=("Roboto", 13, "bold"),
+            fg_color=("gray70", "gray35"),
+            corner_radius=8,
+            width=45,
+            height=30,
+            cursor="hand2"
+        )
+        num_label.place(x=8, y=8)
+        num_label.bind("<Button-1>", lambda e: self.configure_button(btn_index))
+        
+        # Hover effect - alleen border
+        def on_enter(e):
+            btn_frame.configure(border_color="#3B82F6", cursor="hand2")
+        
+        def on_leave(e):
+            config_key = f"mode_{self.current_mode}_btn_{btn_index}"
+            if config_key in self.config:
+                btn_frame.configure(border_color="#00AA00")
+            else:
+                btn_frame.configure(border_color=("gray70", "gray30"))
+        
+        btn_frame.bind("<Enter>", on_enter)
+        btn_frame.bind("<Leave>", on_leave)
+        
+        return {
+            'outer': outer_frame,
+            'frame': btn_frame,
+            'icon': icon_label,
+            'action_label': action_label,
+            'hotkey_label': hotkey_label,
+            'num_label': num_label,
+            'index': btn_index
+        }
+    
+    def create_slider_widget(self, parent, slider_index):
+        """Maak een audio slider configurator"""
+        
+        slider_frame = ctk.CTkFrame(
+            parent,
+            corner_radius=15,
+            fg_color=("gray85", "gray20"),
+            border_width=2,
+            border_color=("gray70", "gray30")
+        )
+        slider_frame.pack(pady=10, padx=15, fill="x")
+        
+        # Header
+        header = ctk.CTkLabel(
+            slider_frame,
+            text=f"🎚️ Slider {slider_index + 1}",
+            font=("Roboto", 16, "bold")
+        )
+        header.pack(pady=(15, 5))
+        
+        # App selector
+        ctk.CTkLabel(
+            slider_frame,
+            text="Select App:",
+            font=("Roboto", 11),
+            text_color="gray"
+        ).pack(pady=(5, 2))
+        
+        # Get running apps
+        apps = self.get_audio_apps()
+        
+        app_var = ctk.StringVar(value=self.slider_apps[slider_index] or "Master Volume")
+        
+        # Menu past nu perfect
+        app_menu = ctk.CTkOptionMenu(
+            slider_frame,
+            variable=app_var,
+            values=["Master Volume", "System Sounds"] + apps,
+            width=280,
+            height=35,
+            command=lambda val: self.assign_slider(slider_index, val)
+        )
+        app_menu.pack(pady=5, padx=10)
+        
+        # Visual progress bar
+        progress = ctk.CTkProgressBar(
+            slider_frame,
+            width=280,
+            height=15
+        )
+        progress.set(0.5)
+        progress.pack(pady=10, padx=10)
+        
+        # Volume label
+        vol_label = ctk.CTkLabel(
+            slider_frame,
+            text="50%",
+            font=("Roboto", 12)
+        )
+        vol_label.pack(pady=(0, 15))
+        
+        return {
+            'frame': slider_frame,
+            'menu': app_menu,
+            'progress': progress,
+            'vol_label': vol_label,
+            'var': app_var,
+            'index': slider_index
+        }
+    
+    def get_audio_apps(self):
+        """Detecteer running apps met audio"""
+        try:
+            from pycaw.pycaw import AudioUtilities
+            
+            sessions = AudioUtilities.GetAllSessions()
+            apps = []
+            
+            for session in sessions:
+                if session.Process and session.Process.name():
+                    app_name = session.Process.name()
+                    if app_name not in apps:
+                        apps.append(app_name)
+            
+            return apps
+        except:
+            # Dummy data
+            return ["Discord.exe", "Spotify.exe", "chrome.exe", "obs64.exe", "steam.exe"]
+    
+    def assign_slider(self, slider_index, app_name):
+        """Wijs app toe aan slider"""
+        self.slider_apps[slider_index] = app_name
+        
+        # Save to config
+        self.config[f"slider_{slider_index}"] = app_name
+        self.save_config()
+        
+        # Send to device
+        if self.serial_port and self.serial_port.is_open:
+            self.send_to_device(f"SLIDER:{slider_index}:{app_name}")
+        
+        print(f"🎚️ Slider {slider_index + 1} → {app_name}")
+    
+    def load_slider_states(self):
+        """Laad slider configuraties"""
+        for i in range(3):
+            saved_app = self.config.get(f"slider_{i}", "Master Volume")
+            self.slider_apps[i] = saved_app
+            if i < len(self.slider_widgets):
+                self.slider_widgets[i]['var'].set(saved_app)
+    
+    def configure_button(self, btn_index):
+        """Open configuratie dialog"""
+        
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Configure Button {btn_index + 1}")
+        dialog.geometry("600x700")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # Header
+        header_frame = ctk.CTkFrame(dialog, fg_color=("gray85", "gray20"))
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(
+            header_frame,
+            text=f"🎛️ Button {btn_index + 1} - Mode {self.current_mode + 1}",
+            font=("Roboto", 24, "bold")
+        ).pack(pady=20)
+        
+        # Current config
+        config_key = f"mode_{self.current_mode}_btn_{btn_index}"
+        current = self.config.get(config_key, {})
+        
+        content = ctk.CTkScrollableFrame(dialog)
+        content.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        
+        # Icon
+        ctk.CTkLabel(
+            content,
+            text="Icon (Emoji):",
+            font=("Roboto", 14, "bold")
+        ).pack(pady=(15, 5), anchor="w")
+        
+        icon_entry = ctk.CTkEntry(
+            content, 
+            width=500, 
+            height=45,
+            placeholder_text="🎮",
+            font=("Segoe UI Emoji", 16)
+        )
+        icon_entry.insert(0, current.get('icon', ''))
+        icon_entry.pack(pady=5)
+        
+        # Label
+        ctk.CTkLabel(
+            content,
+            text="Label:",
+            font=("Roboto", 14, "bold")
+        ).pack(pady=(15, 5), anchor="w")
+        
+        label_entry = ctk.CTkEntry(
+            content,
+            width=500,
+            height=45,
+            placeholder_text="Discord Mute",
+            font=("Roboto", 14)
+        )
+        label_entry.insert(0, current.get('label', ''))
+        label_entry.pack(pady=5)
+        
+        # HOTKEY BUILDER
+        ctk.CTkLabel(
+            content,
+            text="Hotkey Combinatie:",
+            font=("Roboto", 14, "bold")
+        ).pack(pady=(20, 5), anchor="w")
+        
+        # Modifier checkboxes
+        modifier_frame = ctk.CTkFrame(content, fg_color="transparent")
+        modifier_frame.pack(fill="x", pady=5)
+        
+        ctrl_var = ctk.BooleanVar(value="ctrl" in current.get('hotkey', ''))
+        shift_var = ctk.BooleanVar(value="shift" in current.get('hotkey', ''))
+        alt_var = ctk.BooleanVar(value="alt" in current.get('hotkey', ''))
+        win_var = ctk.BooleanVar(value="win" in current.get('hotkey', ''))
+        
+        ctk.CTkCheckBox(modifier_frame, text="Ctrl", variable=ctrl_var, font=("Roboto", 13)).pack(side="left", padx=10)
+        ctk.CTkCheckBox(modifier_frame, text="Shift", variable=shift_var, font=("Roboto", 13)).pack(side="left", padx=10)
+        ctk.CTkCheckBox(modifier_frame, text="Alt", variable=alt_var, font=("Roboto", 13)).pack(side="left", padx=10)
+        ctk.CTkCheckBox(modifier_frame, text="Win", variable=win_var, font=("Roboto", 13)).pack(side="left", padx=10)
+        
+        # Main key input
+        ctk.CTkLabel(
+            content,
+            text="Main Key:",
+            font=("Roboto", 12)
+        ).pack(pady=(10, 5), anchor="w")
+        
+        # Extract main key
+        current_hotkey = current.get('hotkey', '')
+        main_key = ""
+        if current_hotkey:
+            parts = current_hotkey.split('+')
+            if parts:
+                main_key = parts[-1]
+        
+        key_entry = ctk.CTkEntry(
+            content,
+            width=500,
+            height=45,
+            placeholder_text="Bijv: m, f13, volumeup",
+            font=("Courier", 14)
+        )
+        key_entry.insert(0, main_key)
+        key_entry.pack(pady=5)
+        
+        # Hotkey preview
+        preview_label = ctk.CTkLabel(
+            content,
+            text="Preview: -",
+            font=("Courier", 12, "bold"),
+            fg_color=("gray80", "gray25"),
+            corner_radius=8,
+            height=40
+        )
+        preview_label.pack(pady=10, fill="x")
+        
+        def update_preview(*args):
+            parts = []
+            if ctrl_var.get(): parts.append("ctrl")
+            if shift_var.get(): parts.append("shift")
+            if alt_var.get(): parts.append("alt")
+            if win_var.get(): parts.append("win")
+            
+            key = key_entry.get().strip().lower()
+            if key:
+                parts.append(key)
+            
+            hotkey = "+".join(parts) if parts else "-"
+            preview_label.configure(text=f"Preview: {hotkey}")
+        
+        # Update preview on change
+        ctrl_var.trace_add("write", update_preview)
+        shift_var.trace_add("write", update_preview)
+        alt_var.trace_add("write", update_preview)
+        win_var.trace_add("write", update_preview)
+        key_entry.bind("<KeyRelease>", update_preview)
+        
+        update_preview()
+        
+        # Info
+        info_text = """Beschikbare keys:
+• Letters: a-z
+• Cijfers: 0-9  
+• Functie: f1-f24
+• Media: volumeup, volumedown, volumemute, playpause
+• Special: space, enter, tab, esc, backspace
+• Arrows: up, down, left, right"""
+        
+        ctk.CTkLabel(
+            content,
+            text=info_text,
+            font=("Courier", 9),
+            text_color="gray",
+            justify="left"
+        ).pack(pady=10, anchor="w")
+        
+        # Save button
+        def save_config():
+            icon = icon_entry.get().strip() or '🎮'
+            label = label_entry.get().strip() or 'Unnamed'
+            
+            # Build hotkey
+            parts = []
+            if ctrl_var.get(): parts.append("ctrl")
+            if shift_var.get(): parts.append("shift")
+            if alt_var.get(): parts.append("alt")
+            if win_var.get(): parts.append("win")
+            
+            key = key_entry.get().strip().lower()
+            if key:
+                parts.append(key)
+            
+            hotkey = "+".join(parts)
+            
+            if not hotkey or not key:
+                error_label = ctk.CTkLabel(
+                    content,
+                    text="❌ Main key mag niet leeg zijn!",
+                    font=("Roboto", 12, "bold"),
+                    text_color="red"
+                )
+                error_label.pack(pady=10)
+                dialog.after(2000, error_label.destroy)
+                return
+            
+            new_config = {
+                'icon': icon,
+                'label': label,
+                'hotkey': hotkey
+            }
+            
+            self.config[config_key] = new_config
+            self.save_config()
+            self.update_button_display(btn_index)
+            
+            # Send to device
+            self.send_button_config(self.current_mode, btn_index, new_config)
+            
+            dialog.destroy()
+        
+        save_btn = ctk.CTkButton(
+            dialog,
+            text="💾 Save Configuration",
+            command=save_config,
+            height=55,
+            font=("Roboto", 16, "bold"),
+            fg_color="green",
+            hover_color="darkgreen"
+        )
+        save_btn.pack(pady=15, padx=20, fill="x")
+        
+        # Delete button
+        if config_key in self.config:
+            delete_btn = ctk.CTkButton(
+                dialog,
+                text="🗑️ Clear Button",
+                command=lambda: self.clear_button(config_key, btn_index, dialog),
+                height=45,
+                fg_color="red",
+                hover_color="darkred"
+            )
+            delete_btn.pack(pady=(0, 20), padx=20, fill="x")
+    
+    def show_quick_action_info(self, action):
+        """Toon info over quick action"""
+        self.info_label.configure(
+            text=f"Selected:\n{action['icon']} {action['name']}\n\nHotkey: {action['hotkey']}\n\nClick een knop (#1-9) om\ndeze actie toe te wijzen"
+        )
+    
+    def update_button_display(self, btn_index):
+        """Update button display met nieuwe config"""
+        
+        config_key = f"mode_{self.current_mode}_btn_{btn_index}"
+        config = self.config.get(config_key, {})
+        
+        btn = self.button_widgets[btn_index]
+        
+        if config:
+            btn['icon'].configure(text=config.get('icon', '🎮'))
+            btn['action_label'].configure(text=config.get('label', 'Action'))
+            btn['hotkey_label'].configure(text=config.get('hotkey', ''))
+            btn['frame'].configure(border_color="#00AA00")
+        else:
+            btn['icon'].configure(text="➕")
+            btn['action_label'].configure(text="Not Set")
+            btn['hotkey_label'].configure(text="")
+            btn['frame'].configure(border_color=("gray70", "gray30"))
+    
+    def switch_mode(self, mode):
+        """Switch naar andere modus"""
+        
+        self.current_mode = mode
+        
+        # Update mode buttons
+        for i, btn in enumerate(self.mode_buttons):
+            if i == mode:
+                btn.configure(fg_color=("#3B82F6", "#1E40AF"))
+            else:
+                btn.configure(fg_color=("gray60", "gray40"))
+        
+        # Update title
+        self.grid_title.configure(text=f"📱 Button Grid - Mode {mode + 1}")
+        
+        # Reload button states
+        self.load_button_states()
+        
+        # Send to device
+        if self.serial_port and self.serial_port.is_open:
+            self.send_to_device(f"MODE:{mode}")
+        
+        print(f"🔄 Switched to Mode {mode + 1}")
+    
+    def load_button_states(self):
+        """Laad button states voor huidige modus"""
+        for i in range(self.buttons_per_mode):
+            self.update_button_display(i)
+    
+    def clear_button(self, config_key, btn_index, dialog):
+        """Clear button configuration"""
+        if config_key in self.config:
+            del self.config[config_key]
+            self.save_config()
+            self.update_button_display(btn_index)
+            
+            # Send clear to device
+            if self.serial_port and self.serial_port.is_open:
+                self.send_to_device(f"CLEAR:{self.current_mode}:{btn_index}")
+            
+            dialog.destroy()
+    
+    def connect_serial(self):
+        """Connect naar Arduino/Pico"""
+        ports = serial.tools.list_ports.comports()
+        
+        if not ports:
+            self.info_label.configure(text="❌ Geen devices gevonden\n\nSluit je Arduino/Pico aan")
+            return
+        
+        # Port selector dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Select Device")
+        dialog.geometry("450x400")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ctk.CTkLabel(
+            dialog,
+            text="🔌 Select Serial Port:",
+            font=("Roboto", 18, "bold")
+        ).pack(pady=20)
+        
+        port_var = ctk.StringVar(value=ports[0].device)
+        
+        for port in ports:
+            ctk.CTkRadioButton(
+                dialog,
+                text=f"{port.device} - {port.description}",
+                variable=port_var,
+                value=port.device,
+                font=("Roboto", 12)
+            ).pack(pady=8, padx=20, anchor="w")
+        
+        def connect():
+            try:
+                self.serial_port = serial.Serial(port_var.get(), 9600, timeout=1)
+                self.serial_button.configure(text="✅ Connected", fg_color="green")
+                self.serial_status.configure(text="✅ Connected", fg_color="green")
+                self.info_label.configure(text=f"✅ Connected to:\n{port_var.get()}\n\nSyncing config...")
+                dialog.destroy()
+                
+                # Send all configs
+                self.after(500, self.send_all_configs)
+                
+            except Exception as e:
+                self.info_label.configure(text=f"❌ Error:\n{str(e)}")
+        
+        ctk.CTkButton(
+            dialog,
+            text="Connect",
+            command=connect,
+            height=50,
+            font=("Roboto", 14, "bold")
+        ).pack(pady=30)
+    
+    def send_to_device(self, message):
+        """Stuur bericht naar device"""
+        if self.serial_port and self.serial_port.is_open:
+            try:
+                self.serial_port.write(f"{message}\n".encode('utf-8'))
+                print(f"📤 Sent: {message}")
+            except Exception as e:
+                print(f"❌ Serial error: {e}")
+                self.serial_status.configure(text="❌ Disconnected", fg_color="red")
+    
+    def send_button_config(self, mode, button, config):
+        """Stuur button config naar device"""
+        hotkey = config.get('hotkey', '')
+        label = config.get('label', 'Button')
+        
+        # Format: BTN:mode:button:hotkey:label
+        message = f"BTN:{mode}:{button}:{hotkey}:{label}"
+        self.send_to_device(message)
+    
+    def send_all_configs(self):
+        """Stuur alle configuraties naar device"""
+        count = 0
+        
+        # Send button configs
+        for key, config in self.config.items():
+            if key.startswith("mode_"):
+                parts = key.split("_")
+                mode = int(parts[1])
+                button = int(parts[3])
+                self.send_button_config(mode, button, config)
+                count += 1
+        
+        # Send slider configs
+        for i in range(3):
+            app = self.slider_apps[i]
+            if app:
+                self.send_to_device(f"SLIDER:{i}:{app}")
+        
+        self.info_label.configure(text=f"✅ Sync complete!\n\n{count} buttons configured\n3 sliders configured")
+        print(f"✅ Sent {count} button configs + 3 sliders to device")
+    
+    def export_config(self):
+        """Export configuratie"""
+        import tkinter.filedialog as fd
+        
+        filename = fd.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")]
+        )
+        
+        if filename:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            print(f"📤 Exported to {filename}")
+            self.info_label.configure(text=f"✅ Exported to:\n{Path(filename).name}")
+    
+    def import_config(self):
+        """Import configuratie"""
+        import tkinter.filedialog as fd
+        
+        filename = fd.askopenfilename(
+            filetypes=[("JSON files", "*.json")]
+        )
+        
+        if filename:
+            with open(filename, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+            self.save_config()
+            self.load_button_states()
+            self.load_slider_states()
+            self.send_all_configs()
+            print(f"📥 Imported from {filename}")
+            self.info_label.configure(text=f"✅ Imported from:\n{Path(filename).name}")
+    
+    def load_config(self):
+        """Laad configuratie van disk"""
+        if self.config_file.exists():
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+    
+    def save_config(self):
+        """Sla configuratie op naar disk"""
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, indent=2, ensure_ascii=False)
+        print("💾 Config saved")
+
+
+if __name__ == "__main__":
+    app = StreamDeckManager()
+    app.switch_mode(0)
+    app.mainloop()
