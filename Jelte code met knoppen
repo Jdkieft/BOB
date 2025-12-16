@@ -12,8 +12,8 @@ bool messageComplete = false;
 
 // Toetsenbordknoppen
 
-const int buttonPins[]= {1,2,3,4,5,6,7,8,9};
-const int buttonCount = 9;
+const int buttonPins[]= {4,5,6,7,8,9,10,11,12,13,14};
+const int buttonCount = 11;
 
 const int LED_PIN = LED_BUILTIN;
 
@@ -89,6 +89,7 @@ void loop() {
     incomingMessage = "";
     messageComplete = false;
   }
+  // Knoppen afhandelen
 for (int i = 0; i < buttonCount; i++) {
   int state = digitalRead(buttonPins[i]);
 
