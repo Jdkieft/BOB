@@ -39,6 +39,37 @@ class ConfigManager:
         """
         self.config_file = Path(config_file)
         self.config: Dict[str, Any] = self.load()
+        
+        # Zorg ervoor dat num_modes bestaat in config
+        if 'num_modes' not in self.config:
+            from constants import DEFAULT_MODES
+            self.config['num_modes'] = DEFAULT_MODES
+            self.save()
+    
+    def get_num_modes(self) -> int:
+        """
+        Haal het aantal actieve modes op.
+        
+        Returns:
+            Aantal modes (standaard 4)
+        """
+        return self.config.get('num_modes', 4)
+    
+    def set_num_modes(self, num_modes: int) -> None:
+        """
+        Stel het aantal modes in.
+        
+        Args:
+            num_modes: Aantal modes (1-10)
+        """
+        from constants import MIN_MODES, MAX_MODES_LIMIT
+        
+        # Clamp tussen min en max
+        num_modes = max(MIN_MODES, min(MAX_MODES_LIMIT, num_modes))
+        
+        self.config['num_modes'] = num_modes
+        self.save()
+        print(f"✓ Number of modes set to {num_modes}")
     
     def load(self) -> Dict[str, Any]:
         """

@@ -10,8 +10,14 @@ instellingen aan te passen zonder door meerdere bestanden te zoeken.
 # APPARAAT CONFIGURATIE
 # ============================================================================
 
-# Aantal modes (verschillende lagen van knoppen)
-MAX_MODES = 4
+# Standaard aantal modes bij eerste start
+DEFAULT_MODES = 4
+
+# Maximum aantal modes dat de gebruiker kan aanmaken
+MAX_MODES_LIMIT = 10
+
+# Minimum aantal modes (kan niet minder dan 1)
+MIN_MODES = 1
 
 # Aantal knoppen per mode (3x3 grid)
 BUTTONS_PER_MODE = 9
