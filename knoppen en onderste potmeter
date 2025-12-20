@@ -1,0 +1,47 @@
+const int numButtons = 11;
+
+const int startPin = 4;
+
+const int potPin = A0;
+
+// status van pinnen
+int buttonPins[numButtons];
+bool buttonStates[numButtons];
+
+void setup() {
+  Serial.begin(115200);
+  for (int i = 0; i< numButtons; i++) {
+    buttonPins[i] = startPin + i;
+  pinMode(buttonPins[i], INPUT_PULLUP);
+  buttonStates[i] = HIGH;
+  }
+
+  Serial.println("Knoppen klaar");
+
+}
+
+void loop (){
+  for (int i = 0; i < numButtons; i++) {
+    bool pressed = (digitalRead(buttonPins[i])) == LOW;
+
+    if (pressed != buttonStates[i]) {
+      buttonStates[i] = pressed;
+      if (pressed) {
+        Serial.print("Knop ");
+        Serial.print(i + 1);
+        Serial.println(" ingedrukt");
+      } else{
+        Serial.print("Knop ");
+        Serial.print(i + 1);
+        Serial.println(" losgelaten");
+      }
+
+    }
+  }
+
+  // potmeter onder
+  int potValue = analogRead(potPin);
+  Serial.print("Potentiometer onder: ");
+  Serial.println(potValue);
+  delay(200);
+}

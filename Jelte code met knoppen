@@ -1,0 +1,103 @@
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <Adafruit_ADS1X15.h>
+
+// SH1106 128x64 I2C display
+U8G2_SH1106_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
+Adafruit_ADS1115 ads;
+
+// Serial variables
+String incomingMessage = "";
+bool messageComplete = false;
+
+// Toetsenbordknoppen
+
+const int buttonPins[]= {4,5,6,7,8,9,10,11,12,13,14};
+const int buttonCount = 11;
+
+const int LED_PIN = LED_BUILTIN;
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+// knoppen instellen
+for (int i = 0; i < buttonCount; i++){
+  pinMode(buttonPins[i], INPUT_PULLUP);
+}
+
+  Serial.begin(115200);
+
+  // Start I2C FIRST → required for OLED and ADS1115
+  Wire.begin();
+
+  Serial.println("Booting Pico...");
+
+  // OLED init
+  oled.begin();
+  oled.clearBuffer();
+  oled.setFont(u8g2_font_ncenB08_tr);
+  oled.drawStr(0, 12, "SH1106 werkt!");
+  oled.sendBuffer();
+
+  // ADS1115 init
+  ads.begin();
+  ads.setGain(GAIN_ONE);
+  ads.setDataRate(RATE_ADS1115_128SPS);
+
+  Serial.println("ADS1115 gereed");
+  Serial.println("Wachtend op berichten...");
+}
+
+void loop() {
+
+  // ===== SERIAL ONTVANGEN =====
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    if (c == '\n') {
+      messageComplete = true;
+    } else {
+      incomingMessage += c;
+    }
+  }
+
+  // ===== ADS1115 METING =====
+  int16_t raw = ads.readADC_SingleEnded(0);
+  float voltage = ads.computeVolts(raw);
+
+  Serial.print("RAW: ");
+  Serial.print(raw);
+  Serial.print("   V: ");
+  Serial.println(voltage, 6);
+
+  // ===== OLEDSCHERM UPDATE =====
+  oled.clearBuffer();
+  oled.setFont(u8g2_font_ncenB08_tr);
+  oled.drawStr(0, 12, "Voltage:");
+  oled.setCursor(0, 30);
+  oled.print(voltage, 3);
+  oled.sendBuffer();
+
+  delay(200);
+
+  // ===== BERICHT AFHANDELEN =====
+  if (messageComplete) {
+    Serial.print("Ontvangen: ");
+    Serial.println(incomingMessage);
+
+    // Reset
+    incomingMessage = "";
+    messageComplete = false;
+  }
+  // Knoppen afhandelen
+for (int i = 0; i < buttonCount; i++) {
+  int state = digitalRead(buttonPins[i]);
+
+  if (state == LOW){
+    Serial.print("Knop ");
+    Serial.print(i+1);
+    Serial.println(" is ingedrukt!");
+  }
+}
+
+}
