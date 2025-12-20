@@ -31,7 +31,7 @@ from dialogs import ButtonConfigDialog, SerialPortDialog
 # Import constants
 from constants import (
     WINDOW_WIDTH, WINDOW_HEIGHT, HEADER_HEIGHT,
-    MAX_MODES, BUTTONS_PER_MODE, NUM_SLIDERS,
+    DEFAULT_MODES, MAX_MODES_LIMIT, MIN_MODES, BUTTONS_PER_MODE, NUM_SLIDERS,
     FONT_TITLE, FONT_HEADER, QUICK_ACTIONS,
     MSG_NO_DEVICES, MSG_CONNECTED, MSG_DISCONNECTED,
     MSG_INFO_DEFAULT, MSG_INFO_QUICK_ACTION,
@@ -79,6 +79,7 @@ class StreamDeckManager(ctk.CTk):
         
         # State
         self.current_mode = 0
+        self.num_modes = self.config_manager.get_num_modes()
         self.slider_apps = ["", "", ""]
         
         # UI Components (worden later gevuld)
@@ -165,27 +166,62 @@ class StreamDeckManager(ctk.CTk):
         mode_frame = ctk.CTkFrame(parent, height=100)
         mode_frame.pack(fill="x", padx=10, pady=10)
         
+        # Header met title en add/remove buttons
+        header_frame = ctk.CTkFrame(mode_frame, fg_color="transparent")
+        header_frame.pack(pady=(10, 5), fill="x", padx=10)
+        
         ctk.CTkLabel(
-            mode_frame,
+            header_frame,
             text="Mode Selector",
             font=("Roboto", 18, "bold")
-        ).pack(pady=(10, 5))
+        ).pack(side="left")
         
-        mode_buttons_frame = ctk.CTkFrame(mode_frame, fg_color="transparent")
-        mode_buttons_frame.pack(pady=10)
+        # Mode counter
+        self.mode_counter_label = ctk.CTkLabel(
+            header_frame,
+            text=f"({self.num_modes}/{MAX_MODES_LIMIT})",
+            font=("Roboto", 12),
+            text_color="gray"
+        )
+        self.mode_counter_label.pack(side="left", padx=10)
         
-        # Maak mode buttons
-        for i in range(MAX_MODES):
-            btn = ctk.CTkButton(
-                mode_buttons_frame,
-                text=f"Mode {i+1}",
-                command=lambda m=i: self.switch_mode(m),
-                width=120,
-                height=45,
-                font=("Roboto", 14, "bold")
-            )
-            btn.pack(side="left", padx=5)
-            self.mode_buttons.append(btn)
+        # Add mode button
+        self.add_mode_btn = ctk.CTkButton(
+            header_frame,
+            text="➕ Add Mode",
+            command=self._add_mode,
+            width=100,
+            height=30,
+            font=("Roboto", 11, "bold"),
+            fg_color="green",
+            hover_color="darkgreen"
+        )
+        self.add_mode_btn.pack(side="right", padx=5)
+        
+        # Remove mode button
+        self.remove_mode_btn = ctk.CTkButton(
+            header_frame,
+            text="➖ Remove",
+            command=self._remove_mode,
+            width=100,
+            height=30,
+            font=("Roboto", 11, "bold"),
+            fg_color="red",
+            hover_color="darkred"
+        )
+        self.remove_mode_btn.pack(side="right", padx=5)
+        
+        # Scrollable frame voor mode buttons
+        self.mode_buttons_container = ctk.CTkScrollableFrame(
+            mode_frame,
+            height=60,
+            orientation="horizontal",
+            fg_color="transparent"
+        )
+        self.mode_buttons_container.pack(pady=10, fill="x", padx=10)
+        
+        # Maak initial mode buttons
+        self._rebuild_mode_buttons()
     
     def _create_button_grid(self, parent):
         """Maak 3x3 button grid."""
@@ -325,6 +361,170 @@ class StreamDeckManager(ctk.CTk):
             command=self._handle_import,
             height=35
         ).pack(side="right", padx=5, expand=True, fill="x")
+    
+    # ========================================================================
+    # MODE MANAGEMENT
+    # ========================================================================
+    
+    def _rebuild_mode_buttons(self):
+        """Herbouw alle mode buttons op basis van num_modes."""
+        # Verwijder oude buttons
+        for btn in self.mode_buttons:
+            btn.destroy()
+        self.mode_buttons.clear()
+        
+        # Maak nieuwe buttons
+        for i in range(self.num_modes):
+            btn = ctk.CTkButton(
+                self.mode_buttons_container,
+                text=f"Mode {i+1}",
+                command=lambda m=i: self.switch_mode(m),
+                width=120,
+                height=45,
+                font=("Roboto", 14, "bold")
+            )
+            btn.pack(side="left", padx=5)
+            self.mode_buttons.append(btn)
+        
+        # Update active button
+        self._update_mode_button_colors()
+        
+        # Update add/remove button states
+        self._update_mode_button_states()
+    
+    def _update_mode_button_states(self):
+        """Update de enabled/disabled state van add/remove buttons."""
+        # Disable remove als we op minimum zitten
+        if self.num_modes <= MIN_MODES:
+            self.remove_mode_btn.configure(state="disabled")
+        else:
+            self.remove_mode_btn.configure(state="normal")
+        
+        # Disable add als we op maximum zitten
+        if self.num_modes >= MAX_MODES_LIMIT:
+            self.add_mode_btn.configure(state="disabled")
+        else:
+            self.add_mode_btn.configure(state="normal")
+        
+        # Update counter
+        self.mode_counter_label.configure(text=f"({self.num_modes}/{MAX_MODES_LIMIT})")
+    
+    def _add_mode(self):
+        """Voeg een nieuwe mode toe."""
+        if self.num_modes >= MAX_MODES_LIMIT:
+            self.info_label.configure(
+                text=f"❌ Maximum aantal modes bereikt!\n\nJe kunt maximaal {MAX_MODES_LIMIT} modes hebben."
+            )
+            return
+        
+        self.num_modes += 1
+        self.config_manager.set_num_modes(self.num_modes)
+        
+        # Rebuild buttons
+        self._rebuild_mode_buttons()
+        
+        # Update info
+        self.info_label.configure(
+            text=f"✅ Mode {self.num_modes} toegevoegd!\n\nJe hebt nu {self.num_modes} modes."
+        )
+        
+        print(f"✅ Added mode {self.num_modes}")
+    
+    def _remove_mode(self):
+        """Verwijder de laatste mode."""
+        if self.num_modes <= MIN_MODES:
+            self.info_label.configure(
+                text=f"❌ Minimum aantal modes!\n\nJe moet minimaal {MIN_MODES} mode hebben."
+            )
+            return
+        
+        # Check of de laatste mode configuraties heeft
+        has_configs = False
+        for btn in range(BUTTONS_PER_MODE):
+            if self.config_manager.get_button_config(self.num_modes - 1, btn):
+                has_configs = True
+                break
+        
+        # Vraag bevestiging als er configuraties zijn
+        if has_configs:
+            dialog = ctk.CTkToplevel(self)
+            dialog.title("Confirm Delete")
+            dialog.geometry("400x200")
+            dialog.transient(self)
+            dialog.grab_set()
+            
+            ctk.CTkLabel(
+                dialog,
+                text=f"⚠️ Mode {self.num_modes} verwijderen?",
+                font=("Roboto", 18, "bold")
+            ).pack(pady=20)
+            
+            ctk.CTkLabel(
+                dialog,
+                text=f"Deze mode heeft geconfigureerde buttons.\nAlle configuraties worden verwijderd!",
+                font=("Roboto", 12),
+                text_color="gray"
+            ).pack(pady=10)
+            
+            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            btn_frame.pack(pady=20)
+            
+            ctk.CTkButton(
+                btn_frame,
+                text="❌ Cancel",
+                command=dialog.destroy,
+                width=150,
+                height=40
+            ).pack(side="left", padx=10)
+            
+            ctk.CTkButton(
+                btn_frame,
+                text="🗑️ Delete Mode",
+                command=lambda: [self._confirm_remove_mode(), dialog.destroy()],
+                width=150,
+                height=40,
+                fg_color="red",
+                hover_color="darkred"
+            ).pack(side="right", padx=10)
+        else:
+            self._confirm_remove_mode()
+    
+    def _confirm_remove_mode(self):
+        """Bevestig en voer mode removal uit."""
+        mode_to_remove = self.num_modes - 1
+        
+        # Verwijder alle button configs voor deze mode
+        for btn in range(BUTTONS_PER_MODE):
+            self.config_manager.clear_button_config(mode_to_remove, btn)
+        
+        # Verlaag aantal modes
+        self.num_modes -= 1
+        self.config_manager.set_num_modes(self.num_modes)
+        
+        # Als we in de verwijderde mode zitten, switch naar laatste mode
+        if self.current_mode >= self.num_modes:
+            self.current_mode = self.num_modes - 1
+        
+        # Rebuild buttons
+        self._rebuild_mode_buttons()
+        
+        # Reload current mode
+        self._load_button_states()
+        
+        # Update info
+        self.info_label.configure(
+            text=f"✅ Mode verwijderd!\n\nJe hebt nu {self.num_modes} modes."
+        )
+        
+        print(f"✅ Removed mode {mode_to_remove + 1}")
+    
+    def _update_mode_button_colors(self):
+        """Update de kleuren van mode buttons."""
+        for i, btn in enumerate(self.mode_buttons):
+            if i == self.current_mode:
+                btn.configure(fg_color=("#3B82F6", "#1E40AF"))
+            else:
+                btn.configure(fg_color=("gray60", "gray40"))
     
     # ========================================================================
     # STATE MANAGEMENT
@@ -515,16 +715,17 @@ class StreamDeckManager(ctk.CTk):
         Wissel naar andere mode.
         
         Args:
-            mode: Mode nummer (0-3)
+            mode: Mode nummer (0 tot num_modes-1)
         """
+        # Valideer mode nummer
+        if mode < 0 or mode >= self.num_modes:
+            print(f"❌ Invalid mode: {mode}")
+            return
+        
         self.current_mode = mode
         
         # Update mode buttons
-        for i, btn in enumerate(self.mode_buttons):
-            if i == mode:
-                btn.configure(fg_color=("#3B82F6", "#1E40AF"))
-            else:
-                btn.configure(fg_color=("gray60", "gray40"))
+        self._update_mode_button_colors()
         
         # Update grid title
         self.grid_title.configure(text=f"📱 Button Grid - Mode {mode + 1}")
