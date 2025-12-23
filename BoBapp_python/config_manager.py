@@ -71,6 +71,32 @@ class ConfigManager:
         self.save()
         print(f"✓ Number of modes set to {num_modes}")
     
+    def get_mode_name(self, mode: int) -> str:
+        """
+        Haal de naam van een mode op.
+        
+        Args:
+            mode: Mode nummer (0-9)
+        
+        Returns:
+            Custom naam of standaard "Mode X"
+        """
+        key = f"mode_{mode}_name"
+        return self.config.get(key, f"Mode {mode + 1}")
+    
+    def set_mode_name(self, mode: int, name: str) -> None:
+        """
+        Stel een custom naam in voor een mode.
+        
+        Args:
+            mode: Mode nummer (0-9)
+            name: Nieuwe naam voor de mode
+        """
+        key = f"mode_{mode}_name"
+        self.config[key] = name
+        self.save()
+        print(f"✓ Mode {mode} renamed to '{name}'")
+    
     def load(self) -> Dict[str, Any]:
         """
         Laad configuratie van disk.

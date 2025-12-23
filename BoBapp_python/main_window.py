@@ -201,9 +201,9 @@ class StreamDeckManager(ctk.CTk):
         # Remove mode button
         self.remove_mode_btn = ctk.CTkButton(
             header_frame,
-            text="➖ Remove",
+            text="➖ Remove Current",
             command=self._remove_mode,
-            width=100,
+            width=120,
             height=30,
             font=("Roboto", 11, "bold"),
             fg_color="red",
@@ -375,15 +375,21 @@ class StreamDeckManager(ctk.CTk):
         
         # Maak nieuwe buttons
         for i in range(self.num_modes):
+            mode_name = self.config_manager.get_mode_name(i)
+            
             btn = ctk.CTkButton(
                 self.mode_buttons_container,
-                text=f"Mode {i+1}",
+                text=mode_name,
                 command=lambda m=i: self.switch_mode(m),
                 width=120,
                 height=45,
                 font=("Roboto", 14, "bold")
             )
             btn.pack(side="left", padx=5)
+            
+            # Right-click to rename
+            btn.bind("<Button-3>", lambda e, m=i: self._rename_mode_dialog(m))
+            
             self.mode_buttons.append(btn)
         
         # Update active button
@@ -420,6 +426,13 @@ class StreamDeckManager(ctk.CTk):
         self.num_modes += 1
         self.config_manager.set_num_modes(self.num_modes)
         
+        # Send to Pico
+        if self.serial_manager.is_connected:
+            self.serial_manager.send_mode_count(self.num_modes)
+            # Send default name for new mode
+            default_name = f"Mode {self.num_modes}"
+            self.serial_manager.send_mode_name(self.num_modes - 1, default_name)
+        
         # Rebuild buttons
         self._rebuild_mode_buttons()
         
@@ -431,77 +444,132 @@ class StreamDeckManager(ctk.CTk):
         print(f"✅ Added mode {self.num_modes}")
     
     def _remove_mode(self):
-        """Verwijder de laatste mode."""
+        """Verwijder de huidige geselecteerde mode."""
         if self.num_modes <= MIN_MODES:
             self.info_label.configure(
                 text=f"❌ Minimum aantal modes!\n\nJe moet minimaal {MIN_MODES} mode hebben."
             )
             return
         
-        # Check of de laatste mode configuraties heeft
+        mode_to_remove = self.current_mode
+        mode_name = self.config_manager.get_mode_name(mode_to_remove)
+        
+        # Check of deze mode configuraties heeft
         has_configs = False
         for btn in range(BUTTONS_PER_MODE):
-            if self.config_manager.get_button_config(self.num_modes - 1, btn):
+            if self.config_manager.get_button_config(mode_to_remove, btn):
                 has_configs = True
                 break
         
-        # Vraag bevestiging als er configuraties zijn
+        # Vraag bevestiging
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Confirm Delete")
+        dialog.geometry("450x250")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ctk.CTkLabel(
+            dialog,
+            text=f"⚠️ {mode_name} verwijderen?",
+            font=("Roboto", 20, "bold")
+        ).pack(pady=20)
+        
         if has_configs:
-            dialog = ctk.CTkToplevel(self)
-            dialog.title("Confirm Delete")
-            dialog.geometry("400x200")
-            dialog.transient(self)
-            dialog.grab_set()
-            
-            ctk.CTkLabel(
-                dialog,
-                text=f"⚠️ Mode {self.num_modes} verwijderen?",
-                font=("Roboto", 18, "bold")
-            ).pack(pady=20)
-            
-            ctk.CTkLabel(
-                dialog,
-                text=f"Deze mode heeft geconfigureerde buttons.\nAlle configuraties worden verwijderd!",
-                font=("Roboto", 12),
-                text_color="gray"
-            ).pack(pady=10)
-            
-            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-            btn_frame.pack(pady=20)
-            
-            ctk.CTkButton(
-                btn_frame,
-                text="❌ Cancel",
-                command=dialog.destroy,
-                width=150,
-                height=40
-            ).pack(side="left", padx=10)
-            
-            ctk.CTkButton(
-                btn_frame,
-                text="🗑️ Delete Mode",
-                command=lambda: [self._confirm_remove_mode(), dialog.destroy()],
-                width=150,
-                height=40,
-                fg_color="red",
-                hover_color="darkred"
-            ).pack(side="right", padx=10)
+            warning_text = "Deze mode heeft geconfigureerde buttons.\nAlle configuraties worden permanent verwijderd!"
+            text_color = "red"
         else:
-            self._confirm_remove_mode()
+            warning_text = "Deze mode is leeg en kan veilig\nverwijderd worden."
+            text_color = "gray"
+        
+        ctk.CTkLabel(
+            dialog,
+            text=warning_text,
+            font=("Roboto", 13),
+            text_color=text_color
+        ).pack(pady=10)
+        
+        ctk.CTkLabel(
+            dialog,
+            text=f"Modes na deze worden hernummerd.\n(Mode {mode_to_remove + 2} → Mode {mode_to_remove + 1}, etc.)",
+            font=("Roboto", 11),
+            text_color="gray"
+        ).pack(pady=5)
+        
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="❌ Cancel",
+            command=dialog.destroy,
+            width=180,
+            height=45,
+            font=("Roboto", 14, "bold")
+        ).pack(side="left", padx=10)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="🗑️ Delete Mode",
+            command=lambda: [self._confirm_remove_current_mode(mode_to_remove), dialog.destroy()],
+            width=180,
+            height=45,
+            font=("Roboto", 14, "bold"),
+            fg_color="red",
+            hover_color="darkred"
+        ).pack(side="right", padx=10)
     
-    def _confirm_remove_mode(self):
-        """Bevestig en voer mode removal uit."""
-        mode_to_remove = self.num_modes - 1
+    def _confirm_remove_current_mode(self, mode_to_remove: int):
+        """Bevestig en voer mode removal uit voor huidige geselecteerde mode."""
         
         # Verwijder alle button configs voor deze mode
         for btn in range(BUTTONS_PER_MODE):
             self.config_manager.clear_button_config(mode_to_remove, btn)
+            # Send clear to Pico
+            if self.serial_manager.is_connected:
+                self.serial_manager.send_clear_button(mode_to_remove, btn)
+        
+        # Verwijder mode naam
+        mode_name_key = f"mode_{mode_to_remove}_name"
+        if mode_name_key in self.config_manager.config:
+            del self.config_manager.config[mode_name_key]
+        
+        # Shift alle modes na deze mode omlaag
+        for mode in range(mode_to_remove + 1, self.num_modes):
+            # Shift button configs
+            for btn in range(BUTTONS_PER_MODE):
+                config = self.config_manager.get_button_config(mode, btn)
+                if config:
+                    # Verplaats naar mode - 1
+                    self.config_manager.set_button_config(mode - 1, btn, config)
+                    # Verwijder oude
+                    self.config_manager.clear_button_config(mode, btn)
+                    
+                    # Send to Pico
+                    if self.serial_manager.is_connected:
+                        self.serial_manager.send_button_config(mode - 1, btn, config)
+                        self.serial_manager.send_clear_button(mode, btn)
+            
+            # Shift mode namen
+            old_name_key = f"mode_{mode}_name"
+            new_name_key = f"mode_{mode - 1}_name"
+            if old_name_key in self.config_manager.config:
+                mode_name = self.config_manager.config[old_name_key]
+                self.config_manager.config[new_name_key] = mode_name
+                del self.config_manager.config[old_name_key]
+                
+                # Send to Pico
+                if self.serial_manager.is_connected:
+                    self.serial_manager.send_mode_name(mode - 1, mode_name)
         
         # Verlaag aantal modes
         self.num_modes -= 1
         self.config_manager.set_num_modes(self.num_modes)
         
-        # Als we in de verwijderde mode zitten, switch naar laatste mode
+        # Send to Pico
+        if self.serial_manager.is_connected:
+            self.serial_manager.send_mode_count(self.num_modes)
+        
+        # Switch naar veilige mode
         if self.current_mode >= self.num_modes:
             self.current_mode = self.num_modes - 1
         
@@ -513,10 +581,103 @@ class StreamDeckManager(ctk.CTk):
         
         # Update info
         self.info_label.configure(
-            text=f"✅ Mode verwijderd!\n\nJe hebt nu {self.num_modes} modes."
+            text=f"✅ Mode verwijderd!\n\nJe hebt nu {self.num_modes} modes.\nModes zijn hernummerd."
         )
         
-        print(f"✅ Removed mode {mode_to_remove + 1}")
+        print(f"✅ Removed mode {mode_to_remove + 1} and shifted remaining modes")
+    
+    def _rename_mode_dialog(self, mode: int):
+        """Open dialog om mode naam te wijzigen."""
+        current_name = self.config_manager.get_mode_name(mode)
+        
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Rename {current_name}")
+        dialog.geometry("450x220")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ctk.CTkLabel(
+            dialog,
+            text=f"✏️ Rename {current_name}",
+            font=("Roboto", 20, "bold")
+        ).pack(pady=20)
+        
+        ctk.CTkLabel(
+            dialog,
+            text="Enter new name:",
+            font=("Roboto", 12),
+            text_color="gray"
+        ).pack(pady=(0, 5))
+        
+        # Name entry
+        name_entry = ctk.CTkEntry(
+            dialog,
+            width=350,
+            height=45,
+            placeholder_text="e.g. Gaming, Streaming, Work...",
+            font=("Roboto", 14)
+        )
+        name_entry.insert(0, current_name)
+        name_entry.pack(pady=10)
+        name_entry.focus()
+        
+        # Select all text
+        name_entry.select_range(0, 'end')
+        
+        def save_name():
+            new_name = name_entry.get().strip()
+            if new_name and len(new_name) <= 20:
+                self.config_manager.set_mode_name(mode, new_name)
+                self._rebuild_mode_buttons()
+                
+                # Send to Pico
+                if self.serial_manager.is_connected:
+                    self.serial_manager.send_mode_name(mode, new_name)
+                
+                # Update grid title if this is current mode
+                if mode == self.current_mode:
+                    self.grid_title.configure(text=f"📱 Button Grid - {new_name}")
+                
+                self.info_label.configure(
+                    text=f"✅ Mode hernoemd!\n\n'{current_name}' → '{new_name}'"
+                )
+                dialog.destroy()
+            elif len(new_name) > 20:
+                error_label = ctk.CTkLabel(
+                    dialog,
+                    text="❌ Naam te lang! (max 20 karakters)",
+                    font=("Roboto", 11, "bold"),
+                    text_color="red"
+                )
+                error_label.pack(pady=5)
+                dialog.after(2000, error_label.destroy)
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            width=150,
+            height=40,
+            font=("Roboto", 13)
+        ).pack(side="left", padx=10)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="💾 Save Name",
+            command=save_name,
+            width=150,
+            height=40,
+            font=("Roboto", 13, "bold"),
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side="right", padx=10)
+        
+        # Enter key to save
+        name_entry.bind("<Return>", lambda e: save_name())
     
     def _update_mode_button_colors(self):
         """Update de kleuren van mode buttons."""
@@ -629,10 +790,42 @@ class StreamDeckManager(ctk.CTk):
     
     def _connect_to_port(self, port_name: str):
         """Maak verbinding met geselecteerde poort."""
+        self.info_label.configure(text="🔌 Connecting...")
+        
         success = self.serial_manager.connect(port_name)
         
         if success:
             # Update UI
+            self.serial_button.configure(
+                text="⏳ Waiting...",
+                fg_color="orange"
+            )
+            self.serial_status.configure(
+                text="⏳ Waiting for device",
+                fg_color="orange"
+            )
+            self.info_label.configure(
+                text=f"⏳ Connected to:\n{port_name}\n\nWaiting for Pico READY..."
+            )
+            
+            # Wait for READY signal in background
+            self.after(100, lambda: self._wait_for_ready_and_sync(port_name))
+        else:
+            self.serial_button.configure(
+                text="🔌 Connect",
+                fg_color=("gray60", "gray40")
+            )
+            self.serial_status.configure(
+                text=MSG_DISCONNECTED,
+                fg_color=("gray80", "gray25")
+            )
+            self.info_label.configure(text="❌ Connection failed")
+    
+    def _wait_for_ready_and_sync(self, port_name: str):
+        """Wacht op READY en start synchronisatie."""
+        # Wait for READY (timeout: 5 seconds)
+        if self.serial_manager.wait_for_ready(timeout=5.0):
+            # READY received!
             self.serial_button.configure(
                 text="✅ Connected",
                 fg_color=COLOR_SUCCESS
@@ -642,13 +835,24 @@ class StreamDeckManager(ctk.CTk):
                 fg_color=COLOR_SUCCESS
             )
             self.info_label.configure(
-                text=f"✅ Connected to:\n{port_name}\n\nSyncing config..."
+                text=f"✅ Device ready!\n\nStarting sync..."
             )
             
-            # Sync configs na korte delay
-            self.after(500, self._sync_all_configs)
+            # Start sync after short delay
+            self.after(200, self._sync_all_configs)
         else:
-            self.info_label.configure(text="❌ Connection failed")
+            # Timeout - no READY received
+            self.serial_button.configure(
+                text="⚠️ No Response",
+                fg_color="orange"
+            )
+            self.serial_status.configure(
+                text="⚠️ No Response",
+                fg_color="orange"
+            )
+            self.info_label.configure(
+                text=f"⚠️ Connected but no response\n\nDevice might not be ready.\nCheck Pico firmware.\n\nRetry sync manually?"
+            )
     
     def _sync_all_configs(self):
         """Synchroniseer alle configuraties naar device."""
@@ -728,12 +932,15 @@ class StreamDeckManager(ctk.CTk):
         self._update_mode_button_colors()
         
         # Update grid title
-        self.grid_title.configure(text=f"📱 Button Grid - Mode {mode + 1}")
+        mode_name = self.config_manager.get_mode_name(mode)
+        self.grid_title.configure(text=f"📱 Button Grid - {mode_name}")
         
         # Reload button states
         self._load_button_states()
         
-        # Send to device
-        self.serial_manager.send_mode_switch(mode)
+        # Send to device (with mode name!)
+        if self.serial_manager.is_connected:
+            mode_name = self.config_manager.get_mode_name(mode)
+            self.serial_manager.send_mode_switch(mode)
         
         print(f"🔄 Switched to Mode {mode + 1}")
