@@ -1,5 +1,9 @@
 """
 Dialog Windows
+
+Dit bestand bevat alle dialog windows die in de applicatie gebruikt worden:
+- Button configuratie dialog met media controls
+- Serial port selectie dialog
 """
 
 import sys
@@ -19,6 +23,19 @@ from constants import (
 class ButtonConfigDialog:
     """Dialog voor het configureren van een button."""
     
+    # Media control presets (class variable)
+    MEDIA_CONTROLS = [
+        {"name": "Play/Pause", "hotkey": "playpause", "icon": "⏯️"},
+        {"name": "Next Track", "hotkey": "nexttrack", "icon": "⏭️"},
+        {"name": "Previous Track", "hotkey": "previoustrack", "icon": "⏮️"},
+        {"name": "Stop", "hotkey": "stop", "icon": "⏹️"},
+        {"name": "Volume Up", "hotkey": "volumeup", "icon": "🔊"},
+        {"name": "Volume Down", "hotkey": "volumedown", "icon": "🔉"},
+        {"name": "Mute/Unmute", "hotkey": "volumemute", "icon": "🔇"},
+        {"name": "Fast Forward", "hotkey": "fastforward", "icon": "⏩"},
+        {"name": "Rewind", "hotkey": "rewind", "icon": "⏪"},
+    ]
+    
     def __init__(
         self,
         parent: ctk.CTk,
@@ -28,13 +45,24 @@ class ButtonConfigDialog:
         on_save: Callable[[Dict[str, str]], None],
         on_clear: Optional[Callable[[], None]] = None
     ):
+        """
+        Initialiseer de button config dialog.
+        
+        Args:
+            parent: Parent window
+            button_index: Button nummer (0-8)
+            mode: Huidige mode (0-3)
+            current_config: Huidige configuratie of None
+            on_save: Callback met nieuwe config
+            on_clear: Callback voor clear button (optioneel)
+        """
         self.on_save = on_save
         self.on_clear = on_clear
         
         # Maak toplevel dialog
         self.dialog = ctk.CTkToplevel(parent)
         self.dialog.title(f"Configure Button {button_index + 1}")
-        self.dialog.geometry("600x700")
+        self.dialog.geometry("650x800")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -49,15 +77,28 @@ class ButtonConfigDialog:
         self.icon_entry = self._create_icon_input(current_config)
         self.label_entry = self._create_label_input(current_config)
         
-        # Create hotkey builder
-        self.modifier_vars = self._create_hotkey_builder(current_config)
-        self.key_entry = self._create_key_input(current_config)
+        # Action type selector
+        self.action_type = self._create_action_type_selector(current_config)
+        
+        # Media controls section (conditionally shown)
+        self.media_frame = self._create_media_controls()
+        
+        # Custom hotkey section (conditionally shown)
+        self.custom_frame = ctk.CTkFrame(self.content, fg_color="transparent")
+        self.custom_frame.pack(fill="x", pady=10)
+        
+        self.modifier_vars = self._create_hotkey_builder(current_config, self.custom_frame)
+        self.key_entry = self._create_key_input(current_config, self.custom_frame)
         
         # Create preview
         self.preview_label = self._create_preview()
         
         # Bind updates
         self._bind_preview_updates()
+        
+        # Set initial visibility
+        self._update_action_type_visibility()
+        
         self._update_preview()
         
         # Info text
@@ -122,13 +163,120 @@ class ButtonConfigDialog:
         
         return label_entry
     
+    def _create_action_type_selector(self, current_config: Optional[Dict]) -> ctk.StringVar:
+        """Maak action type selector (Media Control vs Custom Hotkey)."""
+        
+        ctk.CTkLabel(
+            self.content,
+            text="Action Type:",
+            font=("Roboto", 14, "bold")
+        ).pack(pady=(20, 5), anchor="w")
+        
+        # Determine current type
+        current_hotkey = current_config.get('hotkey', '') if current_config else ''
+        is_media = any(mc['hotkey'] == current_hotkey for mc in self.MEDIA_CONTROLS)
+        
+        action_type_var = ctk.StringVar(value="media" if is_media else "custom")
+        
+        type_frame = ctk.CTkFrame(self.content, fg_color="transparent")
+        type_frame.pack(fill="x", pady=5)
+        
+        ctk.CTkRadioButton(
+            type_frame,
+            text="🎵 Media Control (Play, Volume, etc.)",
+            variable=action_type_var,
+            value="media",
+            font=("Roboto", 13),
+            command=self._update_action_type_visibility
+        ).pack(anchor="w", pady=5)
+        
+        ctk.CTkRadioButton(
+            type_frame,
+            text="⌨️ Custom Hotkey",
+            variable=action_type_var,
+            value="custom",
+            font=("Roboto", 13),
+            command=self._update_action_type_visibility
+        ).pack(anchor="w", pady=5)
+        
+        return action_type_var
+    
+    def _create_media_controls(self) -> ctk.CTkFrame:
+        """Maak media controls selector."""
+        
+        media_frame = ctk.CTkFrame(self.content, fg_color="transparent")
+        media_frame.pack(fill="x", pady=10)
+        
+        ctk.CTkLabel(
+            media_frame,
+            text="Select Media Control:",
+            font=("Roboto", 12),
+            text_color="gray"
+        ).pack(pady=(5, 10), anchor="w")
+        
+        # Create variable for selected media control
+        self.media_var = ctk.StringVar(value="")
+        
+        # Grid of media control buttons
+        grid = ctk.CTkFrame(media_frame, fg_color="transparent")
+        grid.pack(fill="x")
+        
+        for idx, mc in enumerate(self.MEDIA_CONTROLS):
+            row = idx // 2
+            col = idx % 2
+            
+            btn = ctk.CTkButton(
+                grid,
+                text=f"{mc['icon']} {mc['name']}",
+                command=lambda m=mc: self._select_media_control(m),
+                width=250,
+                height=50,
+                font=("Roboto", 13),
+                anchor="w",
+                fg_color=("gray70", "gray30"),
+                hover_color=("gray60", "gray40")
+            )
+            btn.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
+            
+            # Configure grid weights
+            grid.columnconfigure(col, weight=1)
+        
+        return media_frame
+    
+    def _select_media_control(self, media_control: Dict):
+        """Handle media control selectie."""
+        self.media_var.set(media_control['hotkey'])
+        
+        # Auto-fill icon and label if empty
+        if not self.icon_entry.get():
+            self.icon_entry.delete(0, 'end')
+            self.icon_entry.insert(0, media_control['icon'])
+        
+        if not self.label_entry.get() or self.label_entry.get() == "Unnamed":
+            self.label_entry.delete(0, 'end')
+            self.label_entry.insert(0, media_control['name'])
+        
+        self._update_preview()
+    
+    def _update_action_type_visibility(self):
+        """Update zichtbaarheid van media vs custom sections."""
+        if self.action_type.get() == "media":
+            self.media_frame.pack(fill="x", pady=10)
+            self.custom_frame.pack_forget()
+        else:
+            self.media_frame.pack_forget()
+            self.custom_frame.pack(fill="x", pady=10)
+        
+        self._update_preview()
+    
     def _create_hotkey_builder(
         self,
-        current_config: Optional[Dict]
+        current_config: Optional[Dict],
+        parent_frame: ctk.CTkFrame
     ) -> Dict[str, ctk.BooleanVar]:
         """Maak hotkey modifier checkboxes."""
         ctk.CTkLabel(
-            self.content,
+            parent_frame,
             text="Hotkey Combinatie:",
             font=("Roboto", 14, "bold")
         ).pack(pady=(20, 5), anchor="w")
@@ -137,7 +285,7 @@ class ButtonConfigDialog:
         current_hotkey = current_config.get('hotkey', '') if current_config else ''
         
         # Modifier frame
-        modifier_frame = ctk.CTkFrame(self.content, fg_color="transparent")
+        modifier_frame = ctk.CTkFrame(parent_frame, fg_color="transparent")
         modifier_frame.pack(fill="x", pady=5)
         
         # Maak variables en checkboxes
@@ -158,10 +306,10 @@ class ButtonConfigDialog:
         
         return modifiers
     
-    def _create_key_input(self, current_config: Optional[Dict]) -> ctk.CTkEntry:
+    def _create_key_input(self, current_config: Optional[Dict], parent_frame: ctk.CTkFrame) -> ctk.CTkEntry:
         """Maak main key input field."""
         ctk.CTkLabel(
-            self.content,
+            parent_frame,
             text="Main Key:",
             font=("Roboto", 12)
         ).pack(pady=(10, 5), anchor="w")
@@ -176,7 +324,7 @@ class ButtonConfigDialog:
                     main_key = parts[-1]
         
         key_entry = ctk.CTkEntry(
-            self.content,
+            parent_frame,
             width=500,
             height=45,
             placeholder_text="For Example: m, f13, volumeup",
@@ -209,21 +357,36 @@ class ButtonConfigDialog:
     
     def _update_preview(self) -> None:
         """Update de hotkey preview."""
-        parts = []
         
-        # Voeg modifiers toe
-        for name, var in self.modifier_vars.items():
-            if var.get():
-                parts.append(name)
-        
-        # Voeg main key toe
-        key = self.key_entry.get().strip().lower()
-        if key:
-            parts.append(key)
-        
-        # Update preview
-        hotkey = "+".join(parts) if parts else "-"
-        self.preview_label.configure(text=f"Preview: {hotkey}")
+        if self.action_type.get() == "media":
+            # Media control mode
+            selected = self.media_var.get()
+            if selected:
+                # Find the media control
+                mc = next((m for m in self.MEDIA_CONTROLS if m['hotkey'] == selected), None)
+                if mc:
+                    self.preview_label.configure(text=f"Preview: {mc['icon']} {selected}")
+                else:
+                    self.preview_label.configure(text="Preview: (select a media control)")
+            else:
+                self.preview_label.configure(text="Preview: (select a media control)")
+        else:
+            # Custom hotkey mode
+            parts = []
+            
+            # Voeg modifiers toe
+            for name, var in self.modifier_vars.items():
+                if var.get():
+                    parts.append(name)
+            
+            # Voeg main key toe
+            key = self.key_entry.get().strip().lower()
+            if key:
+                parts.append(key)
+            
+            # Update preview
+            hotkey = "+".join(parts) if parts else "-"
+            self.preview_label.configure(text=f"Preview: {hotkey}")
     
     def _create_info_text(self) -> None:
         """Maak info text met beschikbare keys."""
@@ -268,29 +431,45 @@ class ButtonConfigDialog:
         icon = self.icon_entry.get().strip() or '🎮'
         label = self.label_entry.get().strip() or 'Unnamed'
         
-        # Bouw hotkey
-        parts = []
-        for name, var in self.modifier_vars.items():
-            if var.get():
-                parts.append(name)
-        
-        key = self.key_entry.get().strip().lower()
-        if key:
-            parts.append(key)
-        
-        hotkey = "+".join(parts)
-        
-        # Valideer
-        if not hotkey or not key:
-            error_label = ctk.CTkLabel(
-                self.content,
-                text=MSG_EMPTY_HOTKEY,
-                font=("Roboto", 12, "bold"),
-                text_color="red"
-            )
-            error_label.pack(pady=10)
-            self.dialog.after(2000, error_label.destroy)
-            return
+        # Build hotkey based on action type
+        if self.action_type.get() == "media":
+            # Media control
+            hotkey = self.media_var.get()
+            
+            if not hotkey:
+                error_label = ctk.CTkLabel(
+                    self.content,
+                    text="❌ Selecteer een media control!",
+                    font=("Roboto", 12, "bold"),
+                    text_color="red"
+                )
+                error_label.pack(pady=10)
+                self.dialog.after(2000, error_label.destroy)
+                return
+        else:
+            # Custom hotkey
+            parts = []
+            for name, var in self.modifier_vars.items():
+                if var.get():
+                    parts.append(name)
+            
+            key = self.key_entry.get().strip().lower()
+            if key:
+                parts.append(key)
+            
+            hotkey = "+".join(parts)
+            
+            # Valideer
+            if not hotkey or not key:
+                error_label = ctk.CTkLabel(
+                    self.content,
+                    text=MSG_EMPTY_HOTKEY,
+                    font=("Roboto", 12, "bold"),
+                    text_color="red"
+                )
+                error_label.pack(pady=10)
+                self.dialog.after(2000, error_label.destroy)
+                return
         
         # Maak config dict
         new_config = {
@@ -322,6 +501,14 @@ class SerialPortDialog:
         ports: List[Tuple[str, str]],
         on_connect: Callable[[str], None]
     ):
+        """
+        Initialiseer de serial port dialog.
+        
+        Args:
+            parent: Parent window
+            ports: List van (device, description) tuples
+            on_connect: Callback met geselecteerde poort naam
+        """
         self.ports = ports
         self.on_connect = on_connect
         
