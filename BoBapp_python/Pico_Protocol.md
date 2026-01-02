@@ -651,7 +651,7 @@ def parse_command(line):
 
 ---
 
-## ✅ Checklist voor Pico Code
+### ✅ Checklist voor Pico Code
 
 - [ ] Serial initialisatie op 9600 baud
 - [ ] Command parser (split op `:`)
@@ -662,4 +662,5 @@ def parse_command(line):
 - [ ] Stuur `BTN_PRESS` bij button press
 - [ ] Stuur `SLIDER_CHANGE` bij slider movement
 - [ ] Error handling met `ERROR` messages
+
 
