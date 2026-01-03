@@ -1,8 +1,20 @@
+#include <Wire.h>
+#include <Adafruit_ADS1X15.h>
+
+Adafruit_ADS1115 ads;
+
+
 const int numButtons = 11;
 
 const int startPin = 4;
 
 const int potPin = A0;
+
+int volume1 = 0;
+int volume2 = 0;
+int volume3 = 0;
+
+int controlValue = 0; // potmeter op Pico (bijv. effect / menu / tempo)
 
 // status van pinnen
 int buttonPins[numButtons];
@@ -14,8 +26,10 @@ void setup() {
     buttonPins[i] = startPin + i;
   pinMode(buttonPins[i], INPUT_PULLUP);
   buttonStates[i] = HIGH;
+  
   }
 
+ads.begin();
   Serial.println("Knoppen klaar");
 
 }
@@ -39,9 +53,28 @@ void loop (){
     }
   }
 
-  // potmeter onder
-  int potValue = analogRead(potPin);
-  Serial.print("Potentiometer onder: ");
-  Serial.println(potValue);
-  delay(200);
+// potmeters
+
+// ads potmeters 
+
+volume1 = ads.readADC_SingleEnded(0); //ads a0
+volume2 = ads.readADC_SingleEnded(1); //ads a1
+volume3 = ads.readADC_SingleEnded(2); //ads a2
+
+// pico potmeter
+controlValue = analogRead(potPin);
+
+// debug
+Serial.print("vol1: ");
+Serial.print(volume1);
+Serial.print(" | Vol2: ");
+Serial.print(volume2);
+Serial.print(" | Vol3: ");
+Serial.print(volume3);
+Serial.print(" | Control: ");
+Serial.println(controlValue);
+
+delay(200);
+
+
 }
