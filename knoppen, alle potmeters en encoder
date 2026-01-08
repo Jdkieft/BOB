@@ -1,0 +1,141 @@
+#include <Wire.h>
+#include <Adafruit_ADS1X15.h>
+
+Adafruit_ADS1115 ads;
+
+const int numButtons = 11;
+const int startPin = 4;
+const int potPin = A0;
+
+//potmeters
+int volume1 = 0;
+int volume2 = 0;
+int volume3 = 0;
+int controlValue = 0; // potmeter op Pico (bijv. effect / menu / tempo)
+
+//rotary encoder
+
+const int encoderCLK = 15;
+const int encoderDT = 16;
+const int encoderSW = 17;
+
+volatile int encoderPos = 0; // huidige positie
+int lastEncoderPos = 0; // vorige positie(voor detectie verandering)
+bool encoderButtonState = HIGH; // status van drukknop
+bool lastEncoderButtonState = HIGH;
+
+  //interrupt functie voor encoder
+  // wordt automatisch aangeroepen wanneer clk verandert
+
+void updateEncoder() {
+  // beide pinnen uitlezen
+  bool clkState = digitalRead(encoderCLK);
+  bool dtState = digitalRead(encoderDT);
+
+  //als clk en dt hetzelfde zijn = rechtsom
+  //als clk en dt verschillend zijn = linksom
+  if (clkState == dtState) { 
+    encoderPos++; // rechtsom gedraait
+  } else {
+    encoderPos--; // linksom gedraait
+  }
+}
+
+// status van pinnen
+int buttonPins[numButtons];
+bool buttonStates[numButtons];
+
+void setup() {
+  Serial.begin(115200);
+  
+  for (int i = 0; i < numButtons; i++) {
+    buttonPins[i] = startPin + i;
+    pinMode(buttonPins[i], INPUT_PULLUP);
+    buttonStates[i] = HIGH;
+  }
+  
+  // I²C op GP0 (SDA) en GP1 (SCL) configureren
+  Wire.setSDA(0);  // GP0 als SDA
+  Wire.setSCL(1);  // GP1 als SCL
+  Wire.begin();
+  
+  ads.begin();
+
+  //encoder pinnen instellen
+  pinMode(encoderCLK, INPUT_PULLUP); //clk als input met pullup weerstand
+  pinMode(encoderDT, INPUT_PULLUP); //dt als input met pullup weerstand
+  pinMode(encoderSW, INPUT_PULLUP); //knop als input met pullup weerstand
+
+  //interrupt koppelen aan clk pin, roept update encoder() aan zodra encoderclk verandert
+  attachInterrupt(digitalPinToInterrupt(encoderCLK), updateEncoder, CHANGE);
+
+  Serial.println("Streamdeck klaar");
+  
+}
+
+void loop() {
+  for (int i = 0; i < numButtons; i++) {
+    bool pressed = (digitalRead(buttonPins[i])) == LOW;
+    if (pressed != buttonStates[i]) {
+      buttonStates[i] = pressed;
+      if (pressed) {
+        Serial.print("Knop ");
+        Serial.print(i + 1);
+        Serial.println(" ingedrukt");
+      } else {
+        Serial.print("Knop ");
+        Serial.print(i + 1);
+        Serial.println(" losgelaten");
+      }
+    }
+  }
+  
+
+  // controleer of de positie is veranderd
+  if (encoderPos != lastEncoderPos) {
+    int verschil = encoderPos - lastEncoderPos;
+
+    if (verschil > 0) {
+      Serial.print("Encoder RECHTSOM gedraaid | Positie ");
+      Serial.println(encoderPos);
+    } else {
+      Serial.print("Encoder LINKSOM gedraaid | Positie ");
+      Serial.println(encoderPos);
+    }
+
+    lastEncoderPos = encoderPos; // onthoud nieuwe positie
+  }
+    // encoder knop controleren
+  encoderButtonState = digitalRead(encoderSW);
+
+  // Check of knopstatus is veranderd
+  if (encoderButtonState != lastEncoderButtonState) {
+    if (encoderButtonState == LOW) {
+      Serial.println("Encoder KNOP ingedrukt");
+
+    } else {
+      Serial.println("Encoder KNOP losgelaten");
+    }
+    lastEncoderButtonState = encoderButtonState;
+  }
+  // potmeters
+  // ads potmeters 
+  volume1 = ads.readADC_SingleEnded(0); //ads a0
+  volume2 = ads.readADC_SingleEnded(1); //ads a1
+  volume3 = ads.readADC_SingleEnded(2); //ads a2
+  
+  // pico potmeter
+  controlValue = analogRead(potPin);
+  
+  // debug
+  Serial.print("vol1: ");
+  Serial.print(volume1);
+  Serial.print(" | Vol2: ");
+  Serial.print(volume2);
+  Serial.print(" | Vol3: ");
+  Serial.print(volume3);
+  Serial.print(" | Control: ");
+  Serial.println(controlValue);
+  
+  delay(200);
+}
