@@ -1,7 +1,11 @@
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
+#include <U8g2lib.h> 
 
 Adafruit_ADS1115 ads;
+
+// display instellen
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 const int numButtons = 11;
 const int startPin = 4;
@@ -23,6 +27,7 @@ volatile int encoderPos = 0; // huidige positie
 int lastEncoderPos = 0; // vorige positie(voor detectie verandering)
 bool encoderButtonState = HIGH; // status van drukknop
 bool lastEncoderButtonState = HIGH;
+
 
   //interrupt functie voor encoder
   // wordt automatisch aangeroepen wanneer clk verandert
@@ -60,6 +65,17 @@ void setup() {
   Wire.begin();
   
   ads.begin();
+
+  // display starten
+  u8g2.begin(); // scherm starten
+  u8g2.setFont(u8g2_font_ncenB08_tr); // kiest een lettertype
+
+  // welkomstbericht
+  u8g2.clearBuffer(); // maakt het scherm leeg
+  u8g2.drawStr(0, 20, "BOB"); // tekst op positie x=0, y=20
+  u8g2.drawStr(0, 40, "klaar!");
+  u8g2.sendBuffer(); // stuur naar het scherm
+  delay(2000); // 2 seconden laten zien
 
   //encoder pinnen instellen
   pinMode(encoderCLK, INPUT_PULLUP); //clk als input met pullup weerstand
