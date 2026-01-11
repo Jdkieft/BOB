@@ -2,6 +2,30 @@
 #include <Adafruit_ADS1X15.h>
 #include <U8g2lib.h> 
 
+// data structuur op RAM
+struct ButtonConfig {
+  bool configured; // is deze knop geconfigureerd?
+  char hotkey[64]; // hotkey string (bijv ctrl + m)
+  char label[32]; // label tekst (bijv discord mute)
+};
+
+struct ModeConfig {
+  char name[24]; // mode naam
+  ButtonConfig buttons[9]; // 9 buttons per mode
+};
+
+// global state
+ModeConfig modes[10]; // max 10 modes
+char slider_apps[4][64]; // 4 potmeters, max 64 char app naam
+int num_modes = 4; // aantal actieve modes (standaard 4)
+int current_mode = 0; // huidige mode
+bool in_sync = false; // true tijdens sync_start - sync_end
+bool pico_ready = false; // true als setup klaar is
+
+// slider state
+int last_slider_values[4] = {-1, -1, -1, -1}; // vorige waarden voor 4 sliders
+const int SLIDER_TRESHOLD = 5; // minimale verandering voor een update
+
 Adafruit_ADS1115 ads;
 
 // display instellen
@@ -27,6 +51,149 @@ volatile int encoderPos = 0; // huidige positie
 int lastEncoderPos = 0; // vorige positie(voor detectie verandering)
 bool encoderButtonState = HIGH; // status van drukknop
 bool lastEncoderButtonState = HIGH;
+
+// scherm functies
+// stuur message naar pc
+void sendMessage(const char* msg) {
+  Serial.println(msg);
+}
+
+//update display
+void updateDisplay() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+
+  // toon mode naam of standaard
+  if (strlen(modes[current_mode].name) > 0) {
+    u8g2.drawStr(0, 12, modes[current_mode].name);
+  } else {
+    char modeText[16];
+    sprintf(modeText, "Mode %d", current_mode + 1);
+    u8g2.drawStr(0, 12, modeText);
+  }
+
+  // toon hoeveel knoppen er geconfigureerd zijn
+  int configured = 0;
+  for (int i = 0; i < 9; i++) {
+    if (modes[current_mode].buttons[i].configured) {
+      configured++;
+    }
+  }
+
+   char statusText[32];
+  sprintf(statusText, "%d/9 configured", configured);
+  u8g2.drawStr(0, 30, statusText);
+
+  // toon slider info
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 50, "4 potmeters ready");
+
+  u8g2.sendBuffer();
+}
+
+
+// command uitvoering deel1 
+
+void handleSyncStart() {
+  in_sync = true;
+
+  // wis alle huidige data
+  for (int m = 0; m < 10; m++) {
+    strcpy(modes[m].name, "");
+    for (int b = 0; b < 9; b++) {
+      modes[m].buttons[b].configured = false;
+      strcpy(modes[m].buttons[b].hotkey, "");
+      strcpy(modes[m].buttons[b].label, "");
+    }
+  }
+
+  for (int s = 0; s< 4; s++) {
+    strcpy(slider_apps[s], "");
+  }
+
+  sendMessage("ACK:SYNC_START");
+
+  // update display
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 12, "Syncing...");
+  u8g2.sendBuffer();
+}
+
+void handleSyncEnd() {
+  in_sync = false;
+  sendMessage("ACK:SYNC_COMPLETE");
+  
+  // update display
+  updateDisplay();
+
+  Serial.print("Sync complete: ");
+  Serial.print(num_modes);
+  Serial.print(" modes");
+}
+
+void handleButtonConfig(String params) {
+  // format:"mode:knop:hotkey:label"
+  // voorbeeld "0:0:ctrl+shift+m:discord mute"
+
+  int colon1 = params.indexOf(':');
+  int colon2 = params.indexOf(':', colon1 + 1);
+  int colon3 = params.indexOf(':', colon2 + 2);
+
+  if (colon1 == -1 || colon2 == -1 || colon3 == -1) {
+    sendMessage("ERROR:3 BTN parse error");
+    return;
+
+  }
+
+  int mode  = params.substring(0, colon1).toInt();
+  int button  = params.substring(colon1 + 1, colon2).toInt();
+  String hotkey = params.substring(colon2 + 1, colon3);
+  String label = params.substring(colon3 + 1);
+
+  // valideren
+  if (mode < 0 || mode >= 10 || button < 0 || button >= 9) {
+    sendMessage("ERROR:1: invalid mode or button");
+    return;
+  }
+
+  // sla op in ram 
+  modes[mode].buttons[mode].configured = true;
+  hotkey.toCharArray(modes[mode].buttons[button].hotkey, 64);
+  label.toCharArray(modes[mode].buttons[button].label, 32);
+
+  // bevestig
+  char ack[64];
+  sprintf(ack, "ACK:BTN:%D:%D", mode, button);
+  sendMessage(ack);
+  
+  // update display als dit de huidige mode is
+  if (mode == current_mode) {
+    updateDisplay();
+  }
+}
+
+void handleModeSwitch(String params) {
+  int mode = params.toInt();
+
+  // valideren
+  if (mode < 0 || mode >= num_modes) {
+    sendMessage("ERROR:1: Invalid mode number");
+    return;
+  }
+
+  current_mode = mode;
+
+  char ack [32];
+  sprintf(ack, "ACK:MODE:%d", mode);
+  sendMessage(ack);
+
+  // update display
+  updateDisplay();
+  Serial.print("veranderd naar mode ");
+  Serial.println(mode);
+}
+
 
 
   //interrupt functie voor encoder
