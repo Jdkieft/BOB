@@ -166,7 +166,7 @@ class ConfigManager:
             del self.config[key]
             self.save()
     
-    def get_slider_config(self, slider: int) -> str:
+    def get_slider_config(self, slider: int):
         """
         Haal slider configuratie op.
         
@@ -174,20 +174,29 @@ class ConfigManager:
             slider: Slider nummer (0-2)
         
         Returns:
-            App naam of "Master Volume" als niet geconfigureerd
+            List van app namen of lege list
         """
-        return self.config.get(f"slider_{slider}", "Master Volume")
+        config = self.config.get(f"slider_{slider}", [])
+        # Backward compatibility: convert string to list
+        if isinstance(config, str):
+            return [config] if config and config != "Master Volume" else []
+        return config if isinstance(config, list) else []
     
-    def set_slider_config(self, slider: int, app_name: str) -> None:
+    def set_slider_config(self, slider: int, app_names) -> None:
         """
         Sla slider configuratie op.
         
         Args:
             slider: Slider nummer (0-2)
-            app_name: Naam van de applicatie
+            app_names: List van app namen of enkele app naam (backward compat)
         """
-        self.config[f"slider_{slider}"] = app_name
+        # Accept both list and string for backward compatibility
+        if isinstance(app_names, str):
+            app_names = [app_names] if app_names else []
+        
+        self.config[f"slider_{slider}"] = app_names
         self.save()
+        print(f"✓ Slider {slider} configured with {len(app_names)} apps")
     
     def export_to_file(self, filename: str) -> None:
         """

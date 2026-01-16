@@ -265,10 +265,16 @@ class SerialManager:
                     print(f"❌ Error parsing config key {key}: {e}")
         
         # Step 5: Send slider configs
-        for i, app in enumerate(slider_apps):
-            if app:
-                if self.send_slider_config(i, app):
-                    print(f"✓ Sent SLIDER {i}: {app}")
+        for i, apps in enumerate(slider_apps):
+            if apps:
+                # Send as comma-separated list or one by one
+                if isinstance(apps, list):
+                    apps_str = ",".join(apps) if apps else "NONE"
+                else:
+                    apps_str = str(apps)
+                
+                if self.send_slider_config(i, apps_str):
+                    print(f"✓ Sent SLIDER {i}: {len(apps) if isinstance(apps, list) else 1} apps")
                 time.sleep(0.05)
         
         # Step 6: SYNC_END

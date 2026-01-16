@@ -80,7 +80,7 @@ class StreamDeckManager(ctk.CTk):
         # State
         self.current_mode = 0
         self.num_modes = self.config_manager.get_num_modes()
-        self.slider_apps = ["", "", ""]
+        self.slider_apps = [[], [], []]  # Changed to list of lists!
         
         # UI Components (worden later gevuld)
         self.button_widgets: List[ButtonWidget] = []
@@ -696,11 +696,19 @@ class StreamDeckManager(ctk.CTk):
         # Laad button states
         self._load_button_states()
         
-        # Laad slider states
+        # Laad slider states (now list of apps per slider)
         for i in range(NUM_SLIDERS):
-            app = self.config_manager.get_slider_config(i)
-            self.slider_apps[i] = app
-            self.slider_widgets[i].set_app(app)
+            apps = self.config_manager.get_slider_config(i)
+            # Config returns string, but we need list
+            if isinstance(apps, str):
+                # Old config format - convert
+                self.slider_apps[i] = [apps] if apps and apps != "Master Volume" else []
+            elif isinstance(apps, list):
+                self.slider_apps[i] = apps
+            else:
+                self.slider_apps[i] = []
+            
+            self.slider_widgets[i].set_assigned_apps(self.slider_apps[i])
     
     def _load_button_states(self):
         """Laad button states voor huidige mode."""
@@ -759,18 +767,21 @@ class StreamDeckManager(ctk.CTk):
         # Send clear to device
         self.serial_manager.send_clear_button(self.current_mode, button_index)
     
-    def _handle_slider_change(self, slider_index: int, app_name: str):
-        """Handle slider app wijziging."""
+    def _handle_slider_change(self, slider_index: int, app_names: List[str]):
+        """Handle slider app lijst wijziging."""
         # Update state
-        self.slider_apps[slider_index] = app_name
+        self.slider_apps[slider_index] = app_names
         
-        # Save to config
-        self.config_manager.set_slider_config(slider_index, app_name)
+        # Save to config (as list now!)
+        self.config_manager.set_slider_config(slider_index, app_names)
         
-        # Send to device
-        self.serial_manager.send_slider_config(slider_index, app_name)
+        # Send to device (send each app separately or as JSON)
+        if self.serial_manager.is_connected:
+            # Send as comma-separated list
+            apps_str = ",".join(app_names) if app_names else "NONE"
+            self.serial_manager.send_slider_config(slider_index, apps_str)
         
-        print(f"Slider {slider_index + 1} → {app_name}")
+        print(f"Slider {slider_index + 1} → {len(app_names)} apps: {app_names}")
     
     def _handle_connect_click(self):
         """Handle connect button click."""
@@ -898,9 +909,11 @@ class StreamDeckManager(ctk.CTk):
                 self._load_button_states()
                 
                 for i in range(NUM_SLIDERS):
-                    app = self.config_manager.get_slider_config(i)
-                    self.slider_apps[i] = app
-                    self.slider_widgets[i].set_app(app)
+                    apps = self.config_manager.get_slider_config(i)
+                    if isinstance(apps, str):
+                        apps = [apps] if apps else []
+                    self.slider_apps[i] = apps
+                    self.slider_widgets[i].set_assigned_apps(apps)
                 
                 # Sync to device
                 if self.serial_manager.is_connected:
