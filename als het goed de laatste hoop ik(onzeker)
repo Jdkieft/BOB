@@ -24,7 +24,7 @@ bool pico_ready = false;  // true als setup klaar is
 
 // slider state
 int last_slider_values[4] = { -1, -1, -1, -1 };  // vorige waarden voor 4 sliders
-const int SLIDER_THRESHOLD = 5;                  // minimale verandering voor een update
+const int SLIDER_THRESHOLD = 2;                  // minimale verandering voor een update
 
 Adafruit_ADS1115 ads;
 
@@ -46,9 +46,9 @@ int volume3 = 0;
 int controlValue = 0;  // potmeter op Pico (bijv. effect / menu / tempo)
 
 // rotary encoder
-const int encoderCLK = 15;
+const int encoderCLK = 17;
 const int encoderDT = 16;
-const int encoderSW = 17;
+const int encoderSW = 15;
 
 volatile int encoderPos = 0;     // huidige positie
 int lastEncoderPos = 0;          // vorige positie(voor detectie verandering)
@@ -569,7 +569,7 @@ void loop() {
     int16_t raw = ads.readADC_SingleEnded(i);
 
     // map naar 0-100 range
-    int value = map(raw, 0, 26400, 0, 100);
+    int value = map(raw, 0, 26400, 100, 0);
     value = constrain(value, 0, 100);
 
     // alleen sturen bij grote verandering
