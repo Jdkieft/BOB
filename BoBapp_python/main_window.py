@@ -17,6 +17,7 @@ sys.path.insert(0, str(script_dir))
 import customtkinter as ctk
 import tkinter.filedialog as fd
 from typing import List
+import pyautogui  # Voor hotkey simulatie
 
 # Import managers
 from config_manager import ConfigManager
@@ -76,6 +77,11 @@ class StreamDeckManager(ctk.CTk):
         self.config_manager = ConfigManager()
         self.serial_manager = SerialManager()
         self.audio_manager = AudioManager()
+        
+        # Register callbacks voor berichten van Pico
+        self.serial_manager.set_callback('BTN_PRESS', self._handle_pico_button_press)
+        self.serial_manager.set_callback('SLIDER_CHANGE', self._handle_pico_slider_change)
+        self.serial_manager.set_callback('MODE_CHANGE', self._handle_pico_mode_change)
         
         # State
         self.current_mode = 0
@@ -957,3 +963,114 @@ class StreamDeckManager(ctk.CTk):
             self.serial_manager.send_mode_switch(mode)
         
         print(f"🔄 Switched to Mode {mode + 1}")
+    # ========================================================================
+    # PICO MESSAGE HANDLERS (NIEUWE CODE!)
+    # ========================================================================
+    
+    def _handle_pico_button_press(self, mode: int, button: int):
+        """
+        Handle button press bericht van Pico.
+        
+        Deze functie wordt aangeroepen door de serial manager wanneer
+        de Pico een BTN_PRESS bericht stuurt.
+        
+        Args:
+            mode: Mode nummer van de button
+            button: Button nummer (0-8)
+        """
+        print(f"🔘 Pico button press: Mode {mode}, Button {button}")
+        
+        # Haal de configuratie op voor deze button
+        config = self.config_manager.get_button_config(mode, button)
+        
+        if not config:
+            print(f"⚠️  Button {button} in mode {mode} not configured")
+            return
+        
+        # Haal hotkey op
+        hotkey = config.get('hotkey', '')
+        label = config.get('label', 'Unknown')
+        
+        if not hotkey:
+            print(f"⚠️  No hotkey configured for button {button}")
+            return
+        
+        # Simuleer de hotkey!
+        try:
+            print(f"⌨️  Simulating hotkey: {hotkey} for '{label}'")
+            
+            # Parse hotkey string (bijv. "ctrl+shift+m")
+            keys = hotkey.lower().split('+')
+            
+            # Gebruik pyautogui om hotkey te simuleren
+            pyautogui.hotkey(*keys)
+            
+            print(f"✅ Hotkey '{hotkey}' executed successfully")
+            
+            # Update UI om te laten zien dat knop werkt
+            self.after(0, lambda: self.info_label.configure(
+                text=f"🎯 Button Pressed!\n\n{label}\n\nHotkey: {hotkey}"
+            ))
+            
+        except Exception as e:
+            print(f"❌ Error executing hotkey '{hotkey}': {e}")
+            self.after(0, lambda: self.info_label.configure(
+                text=f"❌ Hotkey Error!\n\n{label}\n\n{str(e)}"
+            ))
+    
+    def _handle_pico_slider_change(self, slider: int, value: int):
+        """
+        Handle slider change bericht van Pico.
+        
+        Args:
+            slider: Slider nummer (0-3, maar we hebben er 3)
+            value: Nieuwe waarde (0-100)
+        """
+        if slider >= NUM_SLIDERS:
+            print(f"⚠️  Slider {slider} out of range (max {NUM_SLIDERS-1})")
+            return
+        
+        print(f"🎚️ Pico slider {slider} changed to {value}%")
+        
+        # Update visuele weergave (moet op main thread)
+        self.after(0, lambda: self.slider_widgets[slider].update_volume_display(value / 100.0))
+        
+        # Haal apps op die aan deze slider zijn gekoppeld
+        apps = self.slider_apps[slider]
+        
+        if not apps:
+            print(f"ℹ️  Slider {slider} has no apps assigned")
+            return
+        
+        # Stel volume in voor elke app
+        for app in apps:
+            try:
+                # Converteer 0-100 naar 0.0-1.0
+                volume_float = value / 100.0
+                
+                # Probeer volume te zetten
+                success = self.audio_manager.set_volume_for_app(app, volume_float)
+                
+                if success:
+                    print(f"🔊 Set volume for {app} to {value}%")
+                else:
+                    print(f"⚠️  Could not set volume for {app}")
+                    
+            except Exception as e:
+                print(f"❌ Error setting volume for {app}: {e}")
+    
+    def _handle_pico_mode_change(self, mode: int):
+        """
+        Handle mode change bericht van Pico.
+        
+        Deze functie wordt aangeroepen wanneer de gebruiker op de Pico
+        zelf de mode verandert (bijv. met encoder of mode buttons).
+        
+        Args:
+            mode: Nieuwe mode nummer
+        """
+        print(f"🔄 Pico changed mode to {mode}")
+        
+        # Update de GUI om te synchroniseren met Pico
+        # Gebruik after() om thread-safe te zijn
+        self.after(0, lambda: self.switch_mode(mode))
