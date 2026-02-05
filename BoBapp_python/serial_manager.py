@@ -12,12 +12,18 @@ Protocol:
     - MODE:mode voor mode switch
     - SLIDER:slider:app voor slider config
     - CLEAR:mode:button voor button wissen
+    
+    Van Pico naar PC:
+    - BTN_PRESS:mode:button voor button indrukken
+    - SLIDER_CHANGE:slider:value voor slider wijzigingen
+    - MODE_CHANGE:mode voor mode wijzigingen
 """
 
 import serial
 import serial.tools.list_ports
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Callable
 import time
+import threading
 
 
 class SerialManager:
@@ -28,6 +34,9 @@ class SerialManager:
         port (Serial): De actieve seriële poort verbinding
         is_connected (bool): Status van de verbinding
         is_syncing (bool): True tijdens synchronisatie
+        read_thread (Thread): Background thread voor het lezen van data
+        running (bool): Flag om read thread te stoppen
+        callbacks (dict): Callbacks voor verschillende message types
     """
     
     def __init__(self):
@@ -36,6 +45,33 @@ class SerialManager:
         self.is_connected: bool = False
         self.is_syncing: bool = False
         self.sync_timeout: float = 10.0  # seconds
+        
+        # Threading voor lezen
+        self.read_thread: Optional[threading.Thread] = None
+        self.running: bool = False
+        
+        # READY event voor synchronisatie
+        self.ready_event = threading.Event()
+        self.ready_received = False
+        
+        # Callbacks voor inkomende berichten
+        self.callbacks = {
+            'BTN_PRESS': None,      # (mode, button) -> None
+            'SLIDER_CHANGE': None,  # (slider, value) -> None
+            'MODE_CHANGE': None,    # (mode) -> None
+        }
+    
+    def set_callback(self, message_type: str, callback: Callable):
+        """
+        Stel een callback in voor een bepaald bericht type.
+        
+        Args:
+            message_type: Type bericht ('BTN_PRESS', 'SLIDER_CHANGE', 'MODE_CHANGE')
+            callback: Functie om aan te roepen bij dit bericht
+        """
+        if message_type in self.callbacks:
+            self.callbacks[message_type] = callback
+            print(f"✅ Callback registered for {message_type}")
     
     def get_available_ports(self) -> List[Tuple[str, str]]:
         """
@@ -60,9 +96,20 @@ class SerialManager:
             True als verbinding succesvol, False bij fout
         """
         try:
-            self.port = serial.Serial(port_name, baudrate, timeout=1)
+            self.port = serial.Serial(port_name, baudrate, timeout=0.1)
             self.is_connected = True
+            
+            # Reset READY state
+            self.ready_event.clear()
+            self.ready_received = False
+            
+            # Start read thread
+            self.running = True
+            self.read_thread = threading.Thread(target=self._read_loop, daemon=True)
+            self.read_thread.start()
+            
             print(f"✅ Connected to {port_name}")
+            print(f"🔄 Started read thread")
             return True
         except Exception as e:
             print(f"❌ Connection error: {e}")
@@ -73,17 +120,124 @@ class SerialManager:
         """
         Verbreek de seriële verbinding.
         """
+        # Stop read thread
+        self.running = False
+        if self.read_thread and self.read_thread.is_alive():
+            self.read_thread.join(timeout=1.0)
+        
+        # Close port
         if self.port and self.port.is_open:
             self.port.close()
             self.is_connected = False
             print("🔌 Disconnected")
+    
+    def _read_loop(self):
+        """
+        Background thread die continu data leest van de Pico.
+        """
+        print("🎧 Read loop started")
+        buffer = ""
+        
+        while self.running and self.is_connected:
+            try:
+                if self.port and self.port.is_open and self.port.in_waiting > 0:
+                    # Lees alle beschikbare bytes
+                    data = self.port.read(self.port.in_waiting).decode('utf-8', errors='ignore')
+                    buffer += data
+                    
+                    # Verwerk complete lines
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.strip()
+                        
+                        if line:
+                            self._handle_incoming_message(line)
+                
+                # Kleine pauze om CPU niet te overbelasten
+                time.sleep(0.01)
+                
+            except Exception as e:
+                print(f"⚠️ Read error: {e}")
+                time.sleep(0.1)
+        
+        print("🛑 Read loop stopped")
+    
+    def _handle_incoming_message(self, message: str):
+        """
+        Verwerk een bericht van de Pico.
+        
+        Args:
+            message: Het ontvangen bericht
+        """
+        print(f"📥 Received: {message}")
+        
+        # Parse message type
+        if ':' in message:
+            parts = message.split(':', 1)
+            msg_type = parts[0]
+            params = parts[1] if len(parts) > 1 else ""
+            
+            # BTN_PRESS:mode:button
+            if msg_type == "BTN_PRESS":
+                try:
+                    param_parts = params.split(':')
+                    mode = int(param_parts[0])
+                    button = int(param_parts[1])
+                    
+                    if self.callbacks['BTN_PRESS']:
+                        self.callbacks['BTN_PRESS'](mode, button)
+                except Exception as e:
+                    print(f"❌ Error parsing BTN_PRESS: {e}")
+            
+            # SLIDER_CHANGE:slider:value
+            elif msg_type == "SLIDER_CHANGE":
+                try:
+                    param_parts = params.split(':')
+                    slider = int(param_parts[0])
+                    value = int(param_parts[1])
+                    
+                    if self.callbacks['SLIDER_CHANGE']:
+                        self.callbacks['SLIDER_CHANGE'](slider, value)
+                except Exception as e:
+                    print(f"❌ Error parsing SLIDER_CHANGE: {e}")
+            
+            # MODE_CHANGE:mode
+            elif msg_type == "MODE_CHANGE":
+                try:
+                    mode = int(params)
+                    
+                    if self.callbacks['MODE_CHANGE']:
+                        self.callbacks['MODE_CHANGE'](mode)
+                except Exception as e:
+                    print(f"❌ Error parsing MODE_CHANGE: {e}")
+            
+            # ACK berichten (voor debugging)
+            elif msg_type.startswith("ACK"):
+                print(f"✅ ACK: {params}")
+            
+            # READY bericht
+            elif msg_type == "READY":
+                print(f"🎯 Pico ready: {params}")
+                self.ready_received = True
+                self.ready_event.set()  # Signal dat READY ontvangen is
+            
+            # Error berichten
+            elif msg_type.startswith("ERROR"):
+                print(f"⚠️ Pico error: {params}")
+        
+        else:
+            # Bericht zonder ':'
+            if message == "Pong":
+                print("🏓 Pong received")
+            else:
+                print(f"ℹ️ Info: {message}")
     
     def send_message(self, message: str) -> bool:
         """
         Stuur een bericht naar het apparaat.
         
         Args:
-            message: Het te verzenden bericht (wordt automatisch afgesloten met \\n)
+            message: Het te verzenden bericht (wordt automatisch afgesloten met \n)
         
         Returns:
             True als succesvol verzonden, False bij fout
@@ -166,38 +320,30 @@ class SerialManager:
         """
         Wacht tot Pico READY stuurt.
         
+        Deze functie wacht op een threading.Event dat wordt gezet door
+        de read thread wanneer READY ontvangen wordt.
+        
         Args:
             timeout: Maximum wachttijd in seconden
         
         Returns:
             True als READY ontvangen, False bij timeout
         """
-        if not self.is_connected or not self.port or not self.port.is_open:
+        if not self.is_connected:
             print("❌ Not connected, cannot wait for READY")
             return False
         
         print(f"⏳ Waiting for READY (timeout: {timeout}s)...")
-        start_time = time.time()
         
-        while time.time() - start_time < timeout:
-            if self.port.in_waiting > 0:
-                try:
-                    line = self.port.readline().decode('utf-8').strip()
-                    print(f"📥 Received: {line}")
-                    
-                    if line.startswith("READY"):
-                        # Parse version if present
-                        parts = line.split(":")
-                        version = parts[1] if len(parts) > 1 else "unknown"
-                        print(f"✅ Pico ready (version: {version})")
-                        return True
-                except Exception as e:
-                    print(f"❌ Error reading READY: {e}")
-            
-            time.sleep(0.1)
+        # Wacht op event (thread-safe!)
+        ready = self.ready_event.wait(timeout=timeout)
         
-        print("❌ Timeout waiting for READY")
-        return False
+        if ready:
+            print(f"✅ Pico READY received!")
+            return True
+        else:
+            print("❌ Timeout waiting for READY")
+            return False
     
     def sync_all_configs(self, config_manager, slider_apps: List[str]) -> int:
         """
