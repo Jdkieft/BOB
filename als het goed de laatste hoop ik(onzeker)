@@ -2,7 +2,7 @@
 #include <Adafruit_ADS1X15.h>
 #include <U8g2lib.h>
 
-// data structuur op RAM
+// data structuur op ram
 struct ButtonConfig {
   bool configured;  // is deze knop geconfigureerd?
   char hotkey[64];  // hotkey string (bijv ctrl + m)
@@ -45,10 +45,10 @@ const int startPin = 4;
 const int potPin = A0;
 
 // potmeters
-int volume1 = 0;
-int volume2 = 0;
-int volume3 = 0;
-int controlValue = 0;  // potmeter op Pico (bijv. effect / menu / tempo)
+int volume1 = 0; // potmeter op ads
+int volume2 = 0; // potmeter op ads
+int volume3 = 0; // potmeter op ads
+int controlValue = 0;  // potmeter op pico
 
 // rotary encoder
 const int encoderCLK = 17;
@@ -63,11 +63,6 @@ bool lastEncoderButtonState = HIGH;
 // knop status
 int buttonPins[numButtons];
 bool buttonStates[numButtons];
-
-
-
-
-
 
 
 // scherm functies
@@ -133,7 +128,7 @@ void registerActivity() {
 void handleSyncStart() {
   in_sync = true;
 
-  // wis alle huidige data
+  // verwijder alle huidige data
   for (int m = 0; m < 10; m++) {
     strcpy(modes[m].name, "");
     for (int b = 0; b < 9; b++) {
@@ -443,7 +438,7 @@ void setup() {
     buttonStates[i] = HIGH;
   }
 
-  // I²C op GP0 (SDA) en GP1 (SCL) configureren
+  // I2C op GP0 (SDA) en GP1 (SCL) configureren
   Wire.setSDA(0);  // GP0 als SDA
   Wire.setSCL(1);  // GP1 als SCL
   Wire.begin();
@@ -631,6 +626,6 @@ void loop() {
   setDisplayPower(false);
   }
 
-  // kleine delay
+  // delay
   delay(50);
 }
