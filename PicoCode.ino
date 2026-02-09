@@ -1,0 +1,631 @@
+#include <Wire.h>
+#include <Adafruit_ADS1X15.h>
+#include <U8g2lib.h>
+
+// data structuur op ram
+struct ButtonConfig {
+  bool configured;  // is deze knop geconfigureerd?
+  char hotkey[64];  // hotkey string (bijv ctrl + m)
+  char label[32];   // label tekst (bijv discord mute)
+};
+
+struct ModeConfig {
+  char name[24];            // mode naam
+  ButtonConfig buttons[9];  // 9 buttons per mode
+};
+
+// global state
+ModeConfig modes[10];     // max 10 modes
+char slider_apps[4][64];  // 4 potmeters, max 64 char app naam
+int num_modes = 4;        // aantal actieve modes (standaard 4)
+int current_mode = 0;     // huidige mode
+bool in_sync = false;     // true tijdens sync_start - sync_end
+bool pico_ready = false;  // true als setup klaar is
+
+// slider state
+int last_slider_values[4] = { -1, -1, -1, -1 };  // vorige waarden voor 4 sliders
+const int SLIDER_THRESHOLD = 2;                  // minimale verandering voor een update
+
+Adafruit_ADS1115 ads;
+
+// display uit na 20s
+unsigned long last_activity = 0;
+const unsigned long DISPLAY_TIMEOUT = 20000;
+bool display_on = true;
+
+// display instellen
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+
+String incomingMessage = "";
+
+const int LED_PIN = LED_BUILTIN;
+
+const int numButtons = 11;
+const int startPin = 4;
+const int potPin = A0;
+
+// potmeters
+int volume1 = 0; // potmeter op ads
+int volume2 = 0; // potmeter op ads
+int volume3 = 0; // potmeter op ads
+int controlValue = 0;  // potmeter op pico
+
+// rotary encoder
+const int encoderCLK = 17;
+const int encoderDT = 16;
+const int encoderSW = 15;
+
+volatile int encoderPos = 0;     // huidige positie
+int lastEncoderPos = 0;          // vorige positie(voor detectie verandering)
+bool encoderButtonState = HIGH;  // status van drukknop
+bool lastEncoderButtonState = HIGH;
+
+// knop status
+int buttonPins[numButtons];
+bool buttonStates[numButtons];
+
+
+// scherm functies
+// stuur message naar pc
+void sendMessage(const char* msg) {
+  Serial.println(msg);
+}
+
+//update display
+void updateDisplay() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+
+  // toon mode naam of standaard
+  if (strlen(modes[current_mode].name) > 0) {
+    u8g2.drawStr(0, 12, modes[current_mode].name);
+  } else {
+    char modeText[16];
+    sprintf(modeText, "Mode %d", current_mode + 1);
+    u8g2.drawStr(0, 12, modeText);
+  }
+
+  // toon hoeveel knoppen er geconfigureerd zijn
+  int configured = 0;
+  for (int i = 0; i < 9; i++) {
+    if (modes[current_mode].buttons[i].configured) {
+      configured++;
+    }
+  }
+
+  char statusText[32];
+  sprintf(statusText, "%d/9 configured", configured);
+  u8g2.drawStr(0, 30, statusText);
+
+  // toon slider info
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 50, "4 potmeters ready");
+
+  u8g2.sendBuffer();
+}
+
+void setDisplayPower(bool on) {
+  if (on && !display_on) {
+    u8g2.setPowerSave(0); // display aan
+    display_on = true;
+    updateDisplay();
+  } else if (!on && display_on) {
+    u8g2.setPowerSave(1); // displayt uit
+    display_on = false;
+  }
+}
+
+//registreer activiteit
+void registerActivity() {
+  last_activity = millis();
+  if (!display_on) {
+    setDisplayPower(true);
+  }
+}
+
+// command uitvoering deel1
+
+void handleSyncStart() {
+  in_sync = true;
+
+  // verwijder alle huidige data
+  for (int m = 0; m < 10; m++) {
+    strcpy(modes[m].name, "");
+    for (int b = 0; b < 9; b++) {
+      modes[m].buttons[b].configured = false;
+      strcpy(modes[m].buttons[b].hotkey, "");
+      strcpy(modes[m].buttons[b].label, "");
+    }
+  }
+
+  for (int s = 0; s < 4; s++) {
+    strcpy(slider_apps[s], "");
+  }
+
+  sendMessage("ACK:SYNC_START");
+
+  // update display
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 12, "Syncing...");
+  u8g2.sendBuffer();
+}
+
+void handleSyncEnd() {
+  in_sync = false;
+  sendMessage("ACK:SYNC_COMPLETE");
+
+  // update display
+  updateDisplay();
+
+  Serial.print("Sync complete: ");
+  Serial.print(num_modes);
+  Serial.print(" modes");
+}
+
+void handleButtonConfig(String params) {
+  // format:"mode:knop:hotkey:label"
+  // voorbeeld "0:0:ctrl+shift+m:discord mute"
+
+  int colon1 = params.indexOf(':');
+  int colon2 = params.indexOf(':', colon1 + 1);
+  int colon3 = params.indexOf(':', colon2 + 2);
+
+  if (colon1 == -1 || colon2 == -1 || colon3 == -1) {
+    sendMessage("ERROR:3 BTN parse error");
+    return;
+  }
+
+  int mode = params.substring(0, colon1).toInt();
+  int button = params.substring(colon1 + 1, colon2).toInt();
+  String hotkey = params.substring(colon2 + 1, colon3);
+  String label = params.substring(colon3 + 1);
+
+  // valideren
+  if (mode < 0 || mode >= 10 || button < 0 || button >= 9) {
+    sendMessage("ERROR:1: invalid mode or button");
+    return;
+  }
+
+  // sla op in ram
+  modes[mode].buttons[button].configured = true;
+  hotkey.toCharArray(modes[mode].buttons[button].hotkey, 64);
+  label.toCharArray(modes[mode].buttons[button].label, 32);
+
+  // bevestig
+  char ack[64];
+  sprintf(ack, "ACK:BTN:%D:%D", mode, button);
+  sendMessage(ack);
+
+  // update display als dit de huidige mode is
+  if (mode == current_mode) {
+    updateDisplay();
+  }
+}
+
+void handleModeSwitch(String params) {
+  int mode = params.toInt();
+
+  // valideren
+  if (mode < 0 || mode >= num_modes) {
+    sendMessage("ERROR:1: Invalid mode number");
+    return;
+  }
+
+  current_mode = mode;
+
+  char ack[32];
+  sprintf(ack, "ACK:MODE:%d", mode);
+  sendMessage(ack);
+
+  // update display
+  updateDisplay();
+  Serial.print("veranderd naar mode ");
+  Serial.println(mode);
+}
+
+// commando handles deel 2
+
+void handleModeCount(String params) {
+  int count = params.toInt();
+
+  // validerenn
+  if (count < 1 || count > 10) {
+    sendMessage("ERROR:!:Invalid mode count");
+    return;
+  }
+
+  num_modes = count;
+
+  // bevestigen
+  char ack[32];
+  sprintf(ack, "ACK:MODE_COUNT:%d", count);
+  sendMessage(ack);
+
+  Serial.print("Mode count set to ");
+  Serial.println(count);
+}
+
+void handleModeName(String params) {
+  // format: "mode:naam"
+  // voorbeeld: "0:gaming"
+  int colon = params.indexOf(':');
+
+  if (colon == -1) {
+    sendMessage("ERROR:3: MODE_NAME parse error");
+    return;
+  }
+
+  int mode = params.substring(0, colon).toInt();
+  String name = params.substring(colon + 1);
+
+  // valideren
+  if (mode < 0 || mode >= 10) {
+    sendMessage("ERROR:1: Invalid mode number");
+    return;
+  }
+
+  // opslaan
+  name.toCharArray(modes[mode].name, 24);
+
+  // bevestigen
+  char ack[32];
+  sprintf(ack, "ACK:MODE_NAME:%d", mode);
+  sendMessage(ack);
+
+  // update scherm als dit de huidige mode is
+  if (mode == current_mode) {
+    updateDisplay();
+  }
+}
+
+void handleSliderConfig(String params) {
+  // format: "slider: app_name"
+  // bijv : "0:discord.exe"
+
+  int colon = params.indexOf(':');
+
+  if (colon == -1) {
+    sendMessage("ERROR:3: SLIDER parse error");
+    return;
+  }
+
+  int slider = params.substring(0, colon).toInt();
+  String app = params.substring(colon + 1);
+
+  // 4 potmeters valideren
+  if (slider < 0 || slider >= 4) {
+    sendMessage("ERROR:1:Invalid slider number");
+    return;
+  }
+
+  //opslaan
+  app.toCharArray(slider_apps[slider], 64);
+
+  // bevestig
+  char ack[32];
+  sprintf(ack, "ACK:SLIDER:%d", slider);
+  sendMessage(ack);
+
+  Serial.print("Slider ");
+  Serial.print(slider);
+  Serial.print("-->");
+  Serial.println(app);
+}
+
+void handleClearButton(String params) {
+  // format: "mode:knop"
+  // bijv: "0:5"
+
+  int colon = params.indexOf(':');
+
+  if (colon == -1) {
+    sendMessage("ERROR:3:CLEAR parse error");
+    return;
+  }
+
+  int mode = params.substring(0, colon).toInt();
+  int button = params.substring(colon + 1).toInt();
+
+  // valideren
+  if (mode < 0 || mode >= 10 || button < 0 || button >= 9) {
+    sendMessage("ERROR:1:Invalid mode or button");
+    return;
+  }
+
+  // wissen
+  modes[mode].buttons[button].configured = false;
+  strcpy(modes[mode].buttons[button].hotkey, "");
+  strcpy(modes[mode].buttons[button].label, "");
+
+  // bevestigen
+  char ack[32];
+  sprintf(ack, "ACK:CLEAR:%d:%d", mode, button);
+  sendMessage(ack);
+
+  // update display als dit de huidge mode is
+  if (mode == current_mode) {
+    updateDisplay();
+  }
+}
+
+void handleReset() {
+  // wis alles
+  for (int m = 0; m < 10; m++) {
+    strcpy(modes[m].name, "");
+    for (int b = 0; b < 9; b++) {
+      modes[m].buttons[b].configured = false;
+    }
+  }
+
+  num_modes = 1;
+  current_mode = 0;
+
+  sendMessage("ACK:RESET");
+  updateDisplay();
+}
+
+// command verwerker
+void parseCommand(String cmd) {
+  cmd.trim();  // verwijder whitespace
+
+  if (cmd.length() == 0) return;
+
+  // split op ":" delimiter
+  int firstColon = cmd.indexOf(':');
+
+  if (firstColon == -1) {
+    // command zonder parameters
+    String command = cmd;
+
+    if (command == "PING") {
+      sendMessage("Pong");
+    } else if (command == "RESET") {
+      handleReset();
+    } else if (command == "SYNC_START") {
+      handleSyncStart();
+    } else if (command == "SYNC_END") {
+      handleSyncEnd();
+    }
+  } else {
+    // command met parameters
+    String command = cmd.substring(0, firstColon);
+    String params = cmd.substring(firstColon + 1);
+
+    if (command == "BTN") {
+      handleButtonConfig(params);
+    } else if (command == "MODE") {
+      handleModeSwitch(params);
+    } else if (command == "MODE_COUNT") {
+      handleModeCount(params);
+    } else if (command == "MODE_NAME") {
+      handleModeName(params);
+    } else if (command == "SLIDER") {
+      handleSliderConfig(params);
+    } else if (command == "CLEAR") {
+      handleClearButton(params);
+    }
+  }
+}
+//interrupt functie voor encoder
+// wordt automatisch aangeroepen wanneer clk verandert
+
+void updateEncoder() {
+  // beide pinnen uitlezen
+  bool clkState = digitalRead(encoderCLK);
+  bool dtState = digitalRead(encoderDT);
+
+  //als clk en dt hetzelfde zijn = rechtsom
+  //als clk en dt verschillend zijn = linksom
+  if (clkState == dtState) {
+    encoderPos++;  // rechtsom gedraait
+  } else {
+    encoderPos--;  // linksom gedraait
+  }
+}
+
+
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial) {
+    delay(10);
+  }
+
+  for (int i = 0; i < numButtons; i++) {
+    buttonPins[i] = startPin + i;
+    pinMode(buttonPins[i], INPUT_PULLUP);
+    buttonStates[i] = HIGH;
+  }
+
+  // I2C op GP0 (SDA) en GP1 (SCL) configureren
+  Wire.setSDA(0);  // GP0 als SDA
+  Wire.setSCL(1);  // GP1 als SCL
+  Wire.begin();
+
+  // ads1115 init met error check
+  if (!ads.begin()) {
+    Serial.println("ADS1115 not found!");
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 12, "ADS ERROR!");
+    u8g2.sendBuffer();
+    while (1)
+      ;  // stop hier
+  }
+  ads.setGain(GAIN_ONE);
+  ads.setDataRate(RATE_ADS1115_128SPS);
+  Serial.println("ADS1115 ready");
+
+  // display starten
+  u8g2.begin();                        // scherm starten
+  u8g2.setFont(u8g2_font_ncenB08_tr);  // kiest een lettertype
+
+
+
+  //encoder pinnen instellen
+  pinMode(encoderCLK, INPUT_PULLUP);  //clk als input met pullup weerstand
+  pinMode(encoderDT, INPUT_PULLUP);   //dt als input met pullup weerstand
+  pinMode(encoderSW, INPUT_PULLUP);   //knop als input met pullup weerstand
+
+  //interrupt koppelen aan clk pin, roept update encoder() aan zodra encoderclk verandert
+  attachInterrupt(digitalPinToInterrupt(encoderCLK), updateEncoder, CHANGE);
+
+  Serial.println("Knoppen ready");
+  Serial.println("Encoder ready");
+  Serial.println("Potmeter ready");
+
+  // initialiseer modes met standaard namen
+  for (int i = 0; i < 10; i++) {
+    sprintf(modes[i].name, "Mode %d", i + 1);
+  }
+
+  // stuur ready naar pc
+  pico_ready = true;
+  sendMessage("READY:1.0.0");
+  last_activity = millis();
+  Serial.println("Pico ready - waiting for sync...");
+
+  // display startup complete
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 12, "BOB klaar");
+  u8g2.drawStr(0, 30, "Wachten op PC");
+  u8g2.sendBuffer();
+}
+
+void loop() {
+  // serial commands ontvangen
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    if (c == '\n') {
+      // Volledig command ontvangen
+      parseCommand(incomingMessage);
+      incomingMessage = "";
+    } else {
+      incomingMessage += c;
+    }
+  }
+
+  // button presses dectectern
+  for (int i = 0; i < numButtons; i++) {
+    bool pressed = (digitalRead(buttonPins[i]) == LOW);
+
+    if (pressed != buttonStates[i]) {
+      buttonStates[i] = pressed;
+
+      if (pressed) {
+        // knop ingedrukt
+        registerActivity();
+        if (i < 9) {
+          // 3x3 knoppen (0-8) - stuur BTN_PRESS
+          char msg[32];
+          sprintf(msg, "BTN_PRESS:%d:%d", current_mode, i);
+          sendMessage(msg);
+
+          Serial.print("🔘 Button ");
+          Serial.print(i + 1);
+          Serial.println(" pressed");
+
+          // led feedback
+          digitalWrite(LED_PIN, HIGH);
+        } else if (i == 9) {
+          // mode omhoog knop
+          current_mode = (current_mode + 1) % num_modes;
+          char msg[32];
+          sprintf(msg, "MODE_CHANGE:%d", current_mode);
+          sendMessage(msg);
+          updateDisplay();
+        } else if (i == 10) {
+          // mode omlaag knop
+          current_mode = (current_mode - 1 + num_modes) % num_modes;
+          char msg[32];
+          sprintf(msg, "MODE_CHANGE:%d", current_mode);
+          sendMessage(msg);
+          updateDisplay();
+        }
+      } else {
+        // knop losgelaten
+        if (i < 9) {
+          digitalWrite(LED_PIN, LOW);
+        }
+      }
+    }
+  }
+
+  // rotary encoder
+  if (encoderPos != lastEncoderPos) {
+    registerActivity();
+    int verschil = encoderPos - lastEncoderPos;
+
+    // gebruik encoder voor mode switching
+    if (verschil > 0) {
+      current_mode = (current_mode + 1) % num_modes;
+    } else {
+      current_mode = (current_mode - 1 + num_modes) % num_modes;
+    }
+
+    char msg[32];
+    sprintf(msg, "MODE_CHANGE:%d", current_mode);
+    sendMessage(msg);
+    updateDisplay();
+
+    lastEncoderPos = encoderPos;
+  }
+
+  // encoder knop
+  encoderButtonState = digitalRead(encoderSW);
+  if (encoderButtonState != lastEncoderButtonState) {
+    if (encoderButtonState == LOW) {
+      registerActivity(); 
+      Serial.println("Encoder button pressed");
+      // mss extra functie toevoegen
+    }
+    lastEncoderButtonState = encoderButtonState;
+  }
+
+  // sliders selecteren
+
+  // slider 0-2: ADS1115 potmeters (A0, A1, A2)
+  for (int i = 0; i < 3; i++) {
+    int16_t raw = ads.readADC_SingleEnded(i);
+
+    // map naar 0-100 range
+    int value = map(raw, 0, 26400, 100, 0);
+    value = constrain(value, 0, 100);
+
+    // alleen sturen bij grote verandering
+    if (abs(value - last_slider_values[i]) > SLIDER_THRESHOLD) {
+      registerActivity(); 
+      last_slider_values[i] = value;
+
+      char msg[32];
+      sprintf(msg, "SLIDER_CHANGE:%d:%d", i, value);
+      sendMessage(msg);
+    }
+  }
+
+  // dlider 3: pico analog pin (A0/GP26)
+  int picoRaw = analogRead(potPin);
+
+  // map naar 0-100 range
+  int picoValue = map(picoRaw, 0, 4095, 0, 100);
+  picoValue = constrain(picoValue, 0, 100);
+
+  // alleen sturen bij grote verandering
+  if (abs(picoValue - last_slider_values[3]) > SLIDER_THRESHOLD) {
+    registerActivity(); 
+    last_slider_values[3] = picoValue;
+
+    char msg[32];
+    sprintf(msg, "SLIDER_CHANGE:3:%d", picoValue);
+    sendMessage(msg);
+  }
+
+  // cgheck display timeout  
+  if (display_on && (millis() - last_activity > DISPLAY_TIMEOUT)) {
+  setDisplayPower(false);
+  }
+
+  // delay
+  delay(50);
+}
