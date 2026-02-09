@@ -28,6 +28,11 @@ const int SLIDER_THRESHOLD = 2;                  // minimale verandering voor ee
 
 Adafruit_ADS1115 ads;
 
+// display uit na 20s
+unsigned long last_activity = 0;
+const unsigned long DISPLAY_TIMEOUT = 20000;
+bool display_on = true;
+
 // display instellen
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
@@ -104,6 +109,24 @@ void updateDisplay() {
   u8g2.sendBuffer();
 }
 
+void setDisplayPower(bool on) {
+  if (on && !display_on) {
+    u8g2.setPowerSave(0); // display aan
+    display_on = true;
+    updateDisplay();
+  } else if (!on && display_on) {
+    u8g2.setPowerSave(1); // displayt uit
+    display_on = false;
+  }
+}
+
+//registreer activiteit
+void registerActivity() {
+  last_activity = millis();
+  if (!display_on) {
+    setDisplayPower(true);
+  }
+}
 
 // command uitvoering deel1
 
@@ -464,6 +487,7 @@ void setup() {
   // stuur ready naar pc
   pico_ready = true;
   sendMessage("READY:1.0.0");
+  last_activity = millis();
   Serial.println("Pico ready - waiting for sync...");
 
   // display startup complete
@@ -496,7 +520,7 @@ void loop() {
 
       if (pressed) {
         // knop ingedrukt
-
+        registerActivity();
         if (i < 9) {
           // 3x3 knoppen (0-8) - stuur BTN_PRESS
           char msg[32];
@@ -535,6 +559,7 @@ void loop() {
 
   // rotary encoder
   if (encoderPos != lastEncoderPos) {
+    registerActivity();
     int verschil = encoderPos - lastEncoderPos;
 
     // gebruik encoder voor mode switching
@@ -556,6 +581,7 @@ void loop() {
   encoderButtonState = digitalRead(encoderSW);
   if (encoderButtonState != lastEncoderButtonState) {
     if (encoderButtonState == LOW) {
+      registerActivity(); 
       Serial.println("Encoder button pressed");
       // mss extra functie toevoegen
     }
@@ -574,6 +600,7 @@ void loop() {
 
     // alleen sturen bij grote verandering
     if (abs(value - last_slider_values[i]) > SLIDER_THRESHOLD) {
+      registerActivity(); 
       last_slider_values[i] = value;
 
       char msg[32];
@@ -591,11 +618,17 @@ void loop() {
 
   // alleen sturen bij grote verandering
   if (abs(picoValue - last_slider_values[3]) > SLIDER_THRESHOLD) {
+    registerActivity(); 
     last_slider_values[3] = picoValue;
 
     char msg[32];
     sprintf(msg, "SLIDER_CHANGE:3:%d", picoValue);
     sendMessage(msg);
+  }
+
+  // cgheck display timeout  
+  if (display_on && (millis() - last_activity > DISPLAY_TIMEOUT)) {
+  setDisplayPower(false);
   }
 
   // kleine delay
