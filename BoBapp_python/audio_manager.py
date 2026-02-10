@@ -156,3 +156,57 @@ class AudioManager:
         except Exception as e:
             print(f"❌ Volume set error: {e}")
             return False
+
+    @staticmethod
+    def get_master_volume() -> float:
+        """
+        Haal het huidige master (systeem) volume op.
+        
+        Returns:
+            Volume level tussen 0.0 en 1.0, of -1 bij fout
+        """
+        try:
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            
+            devices = AudioUtilities.GetSpeakers()
+            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volume = interface.QueryInterface(IAudioEndpointVolume)
+            
+            # GetMasterVolumeLevelScalar returns 0.0 to 1.0
+            current_volume = volume.GetMasterVolumeLevelScalar()
+            return current_volume
+            
+        except Exception as e:
+            print(f"❌ Master volume get error: {e}")
+            return -1
+    
+    @staticmethod
+    def set_master_volume(volume: float) -> bool:
+        """
+        Stel het master (systeem) volume in.
+        
+        Args:
+            volume: Volume level tussen 0.0 en 1.0
+        
+        Returns:
+            True als succesvol, False bij fout
+        """
+        try:
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            
+            # Clamp volume tussen 0 en 1
+            volume = max(0.0, min(1.0, volume))
+            
+            devices = AudioUtilities.GetSpeakers()
+            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volume_interface = interface.QueryInterface(IAudioEndpointVolume)
+            
+            # SetMasterVolumeLevelScalar accepts 0.0 to 1.0
+            volume_interface.SetMasterVolumeLevelScalar(volume, None)
+            return True
+            
+        except Exception as e:
+            print(f"❌ Master volume set error: {e}")
+            return False

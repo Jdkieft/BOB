@@ -23,7 +23,7 @@ MIN_MODES = 1
 BUTTONS_PER_MODE = 9
 
 # Aantal fysieke sliders
-NUM_SLIDERS = 3
+NUM_SLIDERS = 4  # 3 voor apps + 1 voor master volume
 
 # Standaard baudrate voor seriële communicatie
 SERIAL_BAUDRATE = 9600

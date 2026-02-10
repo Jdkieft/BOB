@@ -49,19 +49,22 @@ class SliderWidget:
         parent: ctk.CTkFrame,
         index: int,
         available_apps: List[str],
-        on_app_change: Callable[[int, List[str]], None]  # Sends list of apps!
+        on_app_change: Callable[[int, List[str]], None],  # Sends list of apps!
+        is_master_volume: bool = False  # True voor master volume slider
     ):
         """
         Initialiseer een nieuwe slider widget.
         
         Args:
             parent: Parent frame waar de slider in komt
-            index: Slider nummer (0-2)
-            available_apps: List van beschikbare app namen
+            index: Slider nummer (0-3: 0-2 voor apps, 3 voor master)
+            available_apps: List van beschikbare app namen (leeg voor master)
             on_app_change: Callback (slider_index, app_list) bij wijziging
+            is_master_volume: True als dit de master volume slider is
         """
         self.index = index
         self.on_app_change = on_app_change
+        self.is_master_volume = is_master_volume
         self.assigned_apps = []  # List of app names in this group
         
         # Maak container frame
@@ -75,66 +78,107 @@ class SliderWidget:
         self.frame.pack(pady=10, padx=15, fill="x")
         
         # Header met slider nummer
+        if is_master_volume:
+            header_text = f"🔊 Master Volume (Slider {index + 1})"
+            header_color = "orange"
+        else:
+            header_text = f"🎚️ Slider {index + 1}"
+            header_color = None
+        
         header = ctk.CTkLabel(
             self.frame,
-            text=f"🎚️ Slider {index + 1}",
-            font=("Roboto", 16, "bold")
+            text=header_text,
+            font=("Roboto", 16, "bold"),
+            text_color=header_color
         )
         header.pack(pady=(15, 5))
         
         # Instructie label
-        ctk.CTkLabel(
-            self.frame,
-            text="Klik op apps hieronder om toe te voegen:",
-            font=("Roboto", 10),
-            text_color="gray"
-        ).pack(pady=(5, 2))
+        if is_master_volume:
+            ctk.CTkLabel(
+                self.frame,
+                text="⚙️ Controleert systeem volume",
+                font=("Roboto", 11, "bold"),
+                text_color="orange"
+            ).pack(pady=(5, 2))
+        else:
+            ctk.CTkLabel(
+                self.frame,
+                text="Klik op apps hieronder om toe te voegen:",
+                font=("Roboto", 10),
+                text_color="gray"
+            ).pack(pady=(5, 2))
         
-        # Apps container (scrollable, compact)
-        self.apps_container = ctk.CTkScrollableFrame(
-            self.frame,
-            height=150,
-            fg_color=("gray90", "gray15")
-        )
-        self.apps_container.pack(pady=5, padx=10, fill="x")
+        # Apps container (scrollable, compact) - alleen voor app sliders
+        if not is_master_volume:
+            self.apps_container = ctk.CTkScrollableFrame(
+                self.frame,
+                height=150,
+                fg_color=("gray90", "gray15")
+            )
+            self.apps_container.pack(pady=5, padx=10, fill="x")
+        else:
+            # Voor master volume: smaller container met info
+            self.apps_container = None
+            info_frame = ctk.CTkFrame(
+                self.frame,
+                height=150,
+                fg_color=("gray90", "gray15")
+            )
+            info_frame.pack(pady=5, padx=10, fill="x")
+            
+            ctk.CTkLabel(
+                info_frame,
+                text="🎵 System Audio Control\n\nDeze slider regelt het\nvolledige systeem volume",
+                font=("Roboto", 11),
+                justify="center"
+            ).pack(expand=True, pady=50)
         
-        # Empty state label
-        self.empty_label = ctk.CTkLabel(
-            self.apps_container,
-            text="Geen apps toegewezen\n\nKlik hieronder om apps toe te voegen",
-            text_color="gray",
-            font=("Roboto", 10)
-        )
-        self.empty_label.pack(pady=10)
+        # Empty state label (alleen voor app sliders)
+        if not is_master_volume:
+            self.empty_label = ctk.CTkLabel(
+                self.apps_container,
+                text="Geen apps toegewezen\n\nKlik hieronder om apps toe te voegen",
+                text_color="gray",
+                font=("Roboto", 10)
+            )
+            self.empty_label.pack(pady=10)
+        else:
+            self.empty_label = None
         
-        # Separator
-        separator = ctk.CTkFrame(self.frame, height=2, fg_color="gray")
-        separator.pack(fill="x", padx=10, pady=5)
-        
-        # Available apps selector (dropdown)
-        ctk.CTkLabel(
-            self.frame,
-            text="Voeg app toe:",
-            font=("Roboto", 10),
-            text_color="gray"
-        ).pack(pady=(5, 2))
-        
-        self.available_apps = available_apps
-        self.app_var = ctk.StringVar(value="")
-        
-        # Dropdown menu for available apps
-        menu_options = ["Selecteer een app..."] + available_apps
-        
-        self.app_menu = ctk.CTkOptionMenu(
-            self.frame,
-            variable=self.app_var,
-            values=menu_options,
-            width=250,
-            height=30,
-            font=("Roboto", 11),
-            command=self._handle_app_select
-        )
-        self.app_menu.pack(pady=5, padx=10)
+        # Separator en dropdown (alleen voor app sliders)
+        if not is_master_volume:
+            separator = ctk.CTkFrame(self.frame, height=2, fg_color="gray")
+            separator.pack(fill="x", padx=10, pady=5)
+            
+            # Available apps selector (dropdown)
+            ctk.CTkLabel(
+                self.frame,
+                text="Voeg app toe:",
+                font=("Roboto", 10),
+                text_color="gray"
+            ).pack(pady=(5, 2))
+            
+            self.available_apps = available_apps
+            self.app_var = ctk.StringVar(value="")
+            
+            # Dropdown menu for available apps
+            menu_options = ["Selecteer een app..."] + available_apps
+            
+            self.app_menu = ctk.CTkOptionMenu(
+                self.frame,
+                variable=self.app_var,
+                values=menu_options,
+                width=250,
+                height=30,
+                font=("Roboto", 11),
+                command=self._handle_app_select
+            )
+            self.app_menu.pack(pady=5, padx=10)
+        else:
+            self.available_apps = []
+            self.app_var = None
+            self.app_menu = None
         
         # Volume indicator (read-only, shows Pico slider position)
         volume_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
@@ -195,6 +239,10 @@ class SliderWidget:
         Args:
             app_name: Naam van de app om weer te geven
         """
+        # Niet voor master volume
+        if self.is_master_volume or self.apps_container is None:
+            return
+        
         # Remove empty label if it exists and is mapped
         try:
             if self.empty_label and self.empty_label.winfo_exists():
@@ -253,6 +301,9 @@ class SliderWidget:
     
     def _update_empty_state(self):
         """Update empty state label visibility."""
+        if self.is_master_volume or self.apps_container is None:
+            return
+        
         if len(self.assigned_apps) == 0:
             self.empty_label = ctk.CTkLabel(
                 self.apps_container,
@@ -286,6 +337,9 @@ class SliderWidget:
         Args:
             apps: Nieuwe lijst van app namen
         """
+        if self.is_master_volume or self.app_menu is None:
+            return
+        
         self.available_apps = apps
         menu_options = ["Selecteer een app..."] + apps
         self.app_menu.configure(values=menu_options)
@@ -308,6 +362,10 @@ class SliderWidget:
         Args:
             apps: Lijst van app namen om toe te wijzen
         """
+        # Niet voor master volume
+        if self.is_master_volume or self.apps_container is None:
+            return
+        
         # Clear current apps (including empty_label!)
         for widget in self.apps_container.winfo_children():
             widget.destroy()

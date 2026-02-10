@@ -86,7 +86,7 @@ class StreamDeckManager(ctk.CTk):
         # State
         self.current_mode = 0
         self.num_modes = self.config_manager.get_num_modes()
-        self.slider_apps = [[], [], []]  # Changed to list of lists!
+        self.slider_apps = [[], [], [], []]  # 3 voor apps + 1 voor master volume
         
         # UI Components (worden later gevuld)
         self.button_widgets: List[ButtonWidget] = []
@@ -280,14 +280,24 @@ class StreamDeckManager(ctk.CTk):
         # Haal beschikbare apps op
         available_apps = self.audio_manager.get_audio_applications()
         
-        # Maak 3 sliders
+        # Maak sliders (0-2 voor apps, 3 voor master volume)
         for i in range(NUM_SLIDERS):
-            slider = SliderWidget(
-                middle_panel,
-                i,
-                available_apps,
-                on_app_change=self._handle_slider_change
-            )
+            # Slider 3 is master volume (geen apps)
+            if i == 3:
+                slider = SliderWidget(
+                    middle_panel,
+                    i,
+                    [],  # Geen apps voor master volume
+                    on_app_change=self._handle_slider_change,
+                    is_master_volume=True  # Special flag
+                )
+            else:
+                slider = SliderWidget(
+                    middle_panel,
+                    i,
+                    available_apps,
+                    on_app_change=self._handle_slider_change
+                )
             self.slider_widgets.append(slider)
     
     def _create_right_panel(self, parent):
@@ -775,6 +785,10 @@ class StreamDeckManager(ctk.CTk):
     
     def _handle_slider_change(self, slider_index: int, app_names: List[str]):
         """Handle slider app lijst wijziging."""
+        # Slider 3 (master volume) slaat geen apps op
+        if slider_index == 3:
+            return
+        
         # Update state
         self.slider_apps[slider_index] = app_names
         
@@ -1023,7 +1037,7 @@ class StreamDeckManager(ctk.CTk):
         Handle slider change bericht van Pico.
         
         Args:
-            slider: Slider nummer (0-3, maar we hebben er 3)
+            slider: Slider nummer (0-3: 0-2 voor apps, 3 voor master volume)
             value: Nieuwe waarde (0-100)
         """
         if slider >= NUM_SLIDERS:
@@ -1035,6 +1049,25 @@ class StreamDeckManager(ctk.CTk):
         # Update visuele weergave (moet op main thread)
         self.after(0, lambda: self.slider_widgets[slider].update_volume_display(value / 100.0))
         
+        # Converteer 0-100 naar 0.0-1.0
+        volume_float = value / 100.0
+        
+        # Check of dit slider 3 is (master volume)
+        if slider == 3:
+            # Stel master volume in
+            try:
+                success = self.audio_manager.set_master_volume(volume_float)
+                
+                if success:
+                    print(f"🔊 Set master volume to {value}%")
+                else:
+                    print(f"⚠️  Could not set master volume")
+                    
+            except Exception as e:
+                print(f"❌ Error setting master volume: {e}")
+            return
+        
+        # Voor sliders 0-2: app volume control
         # Haal apps op die aan deze slider zijn gekoppeld
         apps = self.slider_apps[slider]
         
@@ -1045,9 +1078,6 @@ class StreamDeckManager(ctk.CTk):
         # Stel volume in voor elke app
         for app in apps:
             try:
-                # Converteer 0-100 naar 0.0-1.0
-                volume_float = value / 100.0
-                
                 # Probeer volume te zetten
                 success = self.audio_manager.set_volume_for_app(app, volume_float)
                 
