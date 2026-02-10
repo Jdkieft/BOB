@@ -442,6 +442,7 @@ void setup() {
   Wire.setSDA(0);  // GP0 als SDA
   Wire.setSCL(1);  // GP1 als SCL
   Wire.begin();
+  analogReadResolution(12);
 
   // ads1115 init met error check
   if (!ads.begin()) {
@@ -608,7 +609,7 @@ void loop() {
   int picoRaw = analogRead(potPin);
 
   // map naar 0-100 range
-  int picoValue = map(picoRaw, 0, 4095, 0, 100);
+  int picoValue = map(picoRaw, 0, 4095, 100, 0);
   picoValue = constrain(picoValue, 0, 100);
 
   // alleen sturen bij grote verandering
