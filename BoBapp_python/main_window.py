@@ -34,8 +34,7 @@ from constants import (
     WINDOW_WIDTH, WINDOW_HEIGHT, HEADER_HEIGHT,
     DEFAULT_MODES, MAX_MODES_LIMIT, MIN_MODES, BUTTONS_PER_MODE, NUM_SLIDERS,
     FONT_TITLE, FONT_HEADER, QUICK_ACTIONS,
-    MSG_NO_DEVICES, MSG_CONNECTED, MSG_DISCONNECTED,
-    MSG_INFO_DEFAULT, MSG_INFO_QUICK_ACTION,
+    MSG_NO_DEVICES, MSG_INFO_DEFAULT, MSG_INFO_QUICK_ACTION,
     COLOR_BACKGROUND_LIGHT, COLOR_BACKGROUND_DARK,
     COLOR_SUCCESS, COLOR_ERROR
 )
@@ -124,27 +123,15 @@ class StreamDeckManager(ctk.CTk):
             font=FONT_TITLE
         ).pack(side="left", padx=20)
         
-        # Serial status indicator
-        self.serial_status = ctk.CTkLabel(
-            header,
-            text=MSG_DISCONNECTED,
-            font=("Roboto", 12),
-            fg_color=("gray80", "gray25"),
-            corner_radius=5,
-            width=120,
-            height=30
-        )
-        self.serial_status.pack(side="right", padx=5)
-        
-        # Connect button
+        # Connect button (status wordt getoond in de button zelf)
         self.serial_button = ctk.CTkButton(
             header,
             text="🔌 Connect",
             command=self._handle_connect_click,
-            width=120,
+            width=140,
             height=40
         )
-        self.serial_button.pack(side="right", padx=10)
+        self.serial_button.pack(side="right", padx=20)
     
     def _create_main_container(self):
         """Maak main container met alle panels."""
@@ -831,10 +818,6 @@ class StreamDeckManager(ctk.CTk):
                 text="⏳ Waiting...",
                 fg_color="orange"
             )
-            self.serial_status.configure(
-                text="⏳ Waiting for device",
-                fg_color="orange"
-            )
             self.info_label.configure(
                 text=f"⏳ Connected to:\n{port_name}\n\nWaiting for Pico READY..."
             )
@@ -845,10 +828,6 @@ class StreamDeckManager(ctk.CTk):
             self.serial_button.configure(
                 text="🔌 Connect",
                 fg_color=("gray60", "gray40")
-            )
-            self.serial_status.configure(
-                text=MSG_DISCONNECTED,
-                fg_color=("gray80", "gray25")
             )
             self.info_label.configure(text="❌ Connection failed")
     
@@ -861,10 +840,6 @@ class StreamDeckManager(ctk.CTk):
                 text="✅ Connected",
                 fg_color=COLOR_SUCCESS
             )
-            self.serial_status.configure(
-                text=MSG_CONNECTED,
-                fg_color=COLOR_SUCCESS
-            )
             self.info_label.configure(
                 text=f"✅ Device ready!\n\nStarting sync..."
             )
@@ -874,10 +849,6 @@ class StreamDeckManager(ctk.CTk):
         else:
             # Timeout - no READY received
             self.serial_button.configure(
-                text="⚠️ No Response",
-                fg_color="orange"
-            )
-            self.serial_status.configure(
                 text="⚠️ No Response",
                 fg_color="orange"
             )
