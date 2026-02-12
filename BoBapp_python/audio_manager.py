@@ -157,6 +157,49 @@ class AudioManager:
             print(f"❌ Volume set error: {e}")
             return False
 
+    # Class-level volume interface (singleton pattern)
+    _volume_interface = None
+    _com_initialized = False
+    
+    @staticmethod
+    def _get_volume_interface():
+        """
+        Haal de volume interface op (singleton).
+        
+        Deze methode initialiseert COM en cacht de volume interface
+        voor betere performance en betrouwbaarheid.
+        
+        Returns:
+            IAudioEndpointVolume interface of None bij fout
+        """
+        if AudioManager._volume_interface is not None:
+            return AudioManager._volume_interface
+        
+        try:
+            # COM initialisatie (vereist op Python 3.13+)
+            if not AudioManager._com_initialized:
+                import comtypes
+                comtypes.CoInitialize()
+                AudioManager._com_initialized = True
+            
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            from ctypes import cast, POINTER
+            
+            # Haal audio endpoint op
+            device = AudioUtilities.GetSpeakers()
+            interface = device.EndpointVolume
+            volume = cast(interface, POINTER(IAudioEndpointVolume))
+            
+            # Cache voor hergebruik
+            AudioManager._volume_interface = volume
+            print("✅ Master volume interface initialized")
+            
+            return volume
+            
+        except Exception as e:
+            print(f"❌ Master volume interface error: {e}")
+            return None
+    
     @staticmethod
     def get_master_volume() -> float:
         """
@@ -166,12 +209,9 @@ class AudioManager:
             Volume level tussen 0.0 en 1.0, of -1 bij fout
         """
         try:
-            from comtypes import CLSCTX_ALL
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-            
-            devices = AudioUtilities.GetSpeakers()
-            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            volume = interface.QueryInterface(IAudioEndpointVolume)
+            volume = AudioManager._get_volume_interface()
+            if volume is None:
+                return -1
             
             # GetMasterVolumeLevelScalar returns 0.0 to 1.0
             current_volume = volume.GetMasterVolumeLevelScalar()
@@ -182,31 +222,74 @@ class AudioManager:
             return -1
     
     @staticmethod
-    def set_master_volume(volume: float) -> bool:
+    def set_master_volume(volume_level: float) -> bool:
         """
         Stel het master (systeem) volume in.
         
         Args:
-            volume: Volume level tussen 0.0 en 1.0
+            volume_level: Volume level tussen 0.0 en 1.0
         
         Returns:
             True als succesvol, False bij fout
         """
         try:
-            from comtypes import CLSCTX_ALL
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            volume = AudioManager._get_volume_interface()
+            if volume is None:
+                return False
             
             # Clamp volume tussen 0 en 1
-            volume = max(0.0, min(1.0, volume))
-            
-            devices = AudioUtilities.GetSpeakers()
-            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            volume_interface = interface.QueryInterface(IAudioEndpointVolume)
+            volume_level = max(0.0, min(1.0, volume_level))
             
             # SetMasterVolumeLevelScalar accepts 0.0 to 1.0
-            volume_interface.SetMasterVolumeLevelScalar(volume, None)
+            volume.SetMasterVolumeLevelScalar(volume_level, None)
             return True
             
         except Exception as e:
             print(f"❌ Master volume set error: {e}")
+            # Reset cached interface bij fout
+            AudioManager._volume_interface = None
+            return False
+    
+    @staticmethod
+    def get_master_mute() -> bool:
+        """
+        Haal de master mute status op.
+        
+        Returns:
+            True als gemute, False als niet gemute, False bij fout
+        """
+        try:
+            volume = AudioManager._get_volume_interface()
+            if volume is None:
+                return False
+            
+            return volume.GetMute() == 1
+            
+        except Exception as e:
+            print(f"❌ Master mute get error: {e}")
+            return False
+    
+    @staticmethod
+    def set_master_mute(muted: bool) -> bool:
+        """
+        Stel de master mute status in.
+        
+        Args:
+            muted: True om te muten, False om te unmuten
+        
+        Returns:
+            True als succesvol, False bij fout
+        """
+        try:
+            volume = AudioManager._get_volume_interface()
+            if volume is None:
+                return False
+            
+            volume.SetMute(1 if muted else 0, None)
+            return True
+            
+        except Exception as e:
+            print(f"❌ Master mute set error: {e}")
+            # Reset cached interface bij fout
+            AudioManager._volume_interface = None
             return False
