@@ -21,29 +21,6 @@ from constants import (
 )
 
 
-"""
-Dialog Windows - Wizard Style Version
-
-Wizard-style button configuratie dialog met duidelijke stappen:
-- Step 1: Icon & Label kiezen
-- Step 2: Hotkey configureren
-- Step 3: Preview & Bevestigen
-"""
-
-import sys
-from pathlib import Path
-script_dir = Path(__file__).parent
-sys.path.insert(0, str(script_dir))
-
-import customtkinter as ctk
-from typing import Callable, Optional, Dict, List, Tuple
-
-from constants import (
-    COLOR_BUTTON_NORMAL_LIGHT, COLOR_BUTTON_NORMAL_DARK,
-    HOTKEY_INFO_TEXT, MSG_EMPTY_HOTKEY
-)
-
-
 class WizardButtonConfigDialog:
     """Wizard-style dialog voor het configureren van een button."""
     
@@ -54,16 +31,14 @@ class WizardButtonConfigDialog:
         {"name": "Previous Track", "hotkey": "previoustrack", "icon": "⏮️"},
     ]
     
-    # Uitgebreide emoji lijst - gecategoriseerd (8 categorieën, 12-16 emojis elk)
+    # Uitgebreide emoji lijst - gecategoriseerd
     EMOJI_CATEGORIES = {
         "Media": ["🎮", "🎵", "🎤", "🔊", "🔇", "📢", "⏯️", "⏭️", "⏮️", "⏹️", "🔁", "🔀", "🎧", "📻", "🎬", "📺"],
-        "Tech": ["💻", "⌨️", "🖱️", "📱", "⚙️", "🛠️", "💾", "📁", "🖥️", "📡", "🔌", "💡", "🔋", "🖨️", "⏰", "🔒"],
-        "Action": ["🚀", "⭐", "⚡", "🎯", "🔥", "💥", "✨", "💫", "🌟", "💢", "💨", "🔆"],
-        "Communication": ["💬", "📧", "📞", "📮", "📬", "📭", "📪", "📫", "✉️", "📨", "📩", "📤", "📥", "📲", "☎️", "📠"],
-        "Gaming": ["🎮", "🕹️", "🎲", "🎰", "🎳", "🎯", "🏆", "🥇", "🥈", "🥉", "👾", "🎪"],
-        "Status": ["✅", "❌", "⚠️", "🆗", "🆕", "🆓", "🔴", "🟢", "🔵", "🟡", "⭕", "🛑"],
-        "Arrows": ["⬆️", "⬇️", "⬅️", "➡️", "↗️", "↘️", "↙️", "↖️", "⤴️", "⤵️", "🔄", "🔃"],
-        "Numbers": ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "#️⃣", "*️⃣"],
+        "Tech": ["💻", "⌨️", "🖱️", "📱", "⚙️", "🛠️", "💾", "📁", "🖥️", "📡", "🔌", "💡"],
+        "Action": ["🚀", "⭐", "⚡", "🎯", "🔥", "💥", "✨", "🎪", "🎨", "📸", "🔦", "🧲"],
+        "Communication": ["💬", "📧", "📞", "📮", "📬", "📭", "📪", "📫", "✉️", "📨", "📩", "📤"],
+        "Gaming": ["🎮", "🕹️", "🎲", "🎰", "🎳", "🎯", "🎪", "🏆", "🥇", "🥈", "🥉", "👾"],
+        "Symbols": ["❤️", "💚", "💙", "💜", "🧡", "💛", "🖤", "🤍", "🤎", "❓", "❗", "⚠️"],
     }
     
     def __init__(
@@ -425,7 +400,9 @@ class WizardButtonConfigDialog:
     
     def _show_step_hotkey(self):
         """Step 2: Hotkey configureren."""
-        # Values are already saved by _show_step()
+        # Save step 1 values
+        self.selected_icon = self.icon_entry.get().strip() or '🎮'
+        self.selected_label = self.label_entry.get().strip() or 'Unnamed'
         
         # Scrollable container
         scroll_frame = ctk.CTkScrollableFrame(
@@ -680,7 +657,22 @@ class WizardButtonConfigDialog:
     
     def _show_step_preview(self):
         """Step 3: Preview en bevestigen."""
-        # Values are already saved by _show_step()
+        # Save step 2 values
+        if self.hotkey_type_var.get() == "media":
+            self.selected_hotkey = self.media_var.get()
+            self.selected_hotkey_type = 'media'
+        else:
+            parts = []
+            for name, var in self.modifier_vars.items():
+                if var.get():
+                    parts.append(name)
+            
+            key = self.key_entry.get().strip().lower()
+            if key:
+                parts.append(key)
+            
+            self.selected_hotkey = "+".join(parts)
+            self.selected_hotkey_type = 'custom'
         
         # Scrollable container
         scroll_frame = ctk.CTkScrollableFrame(
@@ -830,40 +822,6 @@ class WizardButtonConfigDialog:
     def _go_back(self):
         """Go to previous step."""
         if self.current_step > 0:
-            # Optionally save current values (no validation)
-            try:
-                if self.current_step == 1 and hasattr(self, 'icon_entry'):
-                    # Going back from step 2 to step 1
-                    # Try to save icon/label if they exist
-                    icon = self.icon_entry.get().strip()
-                    label = self.label_entry.get().strip()
-                    if icon:
-                        self.selected_icon = icon
-                    if label:
-                        self.selected_label = label
-                
-                elif self.current_step == 2 and hasattr(self, 'hotkey_type_var'):
-                    # Going back from step 3 to step 2
-                    # Try to save hotkey if valid
-                    if self.hotkey_type_var.get() == "media":
-                        hotkey = self.media_var.get()
-                        if hotkey:
-                            self.selected_hotkey = hotkey
-                            self.selected_hotkey_type = 'media'
-                    else:
-                        parts = []
-                        for name, var in self.modifier_vars.items():
-                            if var.get():
-                                parts.append(name)
-                        
-                        key = self.key_entry.get().strip().lower()
-                        if key:
-                            parts.append(key)
-                            self.selected_hotkey = "+".join(parts)
-                            self.selected_hotkey_type = 'custom'
-            except:
-                pass  # If widgets don't exist, that's fine
-            
             self.current_step -= 1
             self._show_step(self.current_step)
     
@@ -873,7 +831,7 @@ class WizardButtonConfigDialog:
             # Last step - save
             self._handle_save()
         else:
-            # Validate AND save current step values
+            # Validate current step
             if self.current_step == 0:
                 # Step 1: Icon & label
                 icon = self.icon_entry.get().strip()
@@ -886,41 +844,20 @@ class WizardButtonConfigDialog:
                 if not label:
                     self._show_error("❌ Please enter a label!")
                     return
-                
-                # Save values
-                self.selected_icon = icon
-                self.selected_label = label
             
             elif self.current_step == 1:
                 # Step 2: Hotkey
                 if self.hotkey_type_var.get() == "media":
-                    hotkey = self.media_var.get()
-                    if not hotkey:
+                    if not self.media_var.get():
                         self._show_error("❌ Please select a media control!")
                         return
-                    
-                    # Save values
-                    self.selected_hotkey = hotkey
-                    self.selected_hotkey_type = 'media'
                 else:
-                    # Build custom hotkey
-                    parts = []
-                    for name, var in self.modifier_vars.items():
-                        if var.get():
-                            parts.append(name)
-                    
-                    key = self.key_entry.get().strip().lower()
+                    key = self.key_entry.get().strip()
                     if not key:
                         self._show_error("❌ Please enter a main key!")
                         return
-                    
-                    parts.append(key)
-                    
-                    # Save values
-                    self.selected_hotkey = "+".join(parts)
-                    self.selected_hotkey_type = 'custom'
             
-            # Go to next step (values are now saved)
+            # Go to next step
             self.current_step += 1
             self._show_step(self.current_step)
     
@@ -1028,7 +965,3 @@ class SerialPortDialog:
         if selected_port and self.on_connect:
             self.on_connect(selected_port)
         self.dialog.destroy()
-
-
-# Alias for backwards compatibility
-ButtonConfigDialog = WizardButtonConfigDialog

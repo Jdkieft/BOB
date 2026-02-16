@@ -53,12 +53,30 @@ class SerialManager:
         # READY event voor synchronisatie
         self.ready_event = threading.Event()
         self.ready_received = False
+        self.ready_handled = False  # voorkom meerdere sync triggers
+        
+        # Auto-reconnect systeem
+        self.reconnect_thread: Optional[threading.Thread] = None
+        self.reconnect_running: bool = False
+        self.preferred_port: Optional[str] = None
+        self.reconnect_interval: float = 2.0  # seconds tussen reconnect pogingen
+        
+        # Heartbeat/keepalive systeem
+        self.last_message_time: float = 0
+        self.heartbeat_timeout: float = 5.0  # seconds - disconnect als geen bericht
+        self.heartbeat_check_interval: float = 1.0  # check elke seconde
+        
+        # Keepalive naar Pico (optioneel)
+        self.keepalive_enabled: bool = True
+        self.keepalive_interval: float = 5.0  # stuur elke 5s een ping naar Pico
+        self.last_keepalive_sent: float = 0
         
         # Callbacks voor inkomende berichten
         self.callbacks = {
             'BTN_PRESS': None,      # (mode, button) -> None
             'SLIDER_CHANGE': None,  # (slider, value) -> None
             'MODE_CHANGE': None,    # (mode) -> None
+            'CONNECTION_CHANGED': None,  # (is_connected: bool) -> None
         }
     
     def set_callback(self, message_type: str, callback: Callable):
@@ -96,12 +114,20 @@ class SerialManager:
             True als verbinding succesvol, False bij fout
         """
         try:
+            # Sla preferred port op voor auto-reconnect
+            self.preferred_port = port_name
+            
             self.port = serial.Serial(port_name, baudrate, timeout=0.1)
             self.is_connected = True
             
             # Reset READY state
             self.ready_event.clear()
             self.ready_received = False
+            self.ready_handled = False
+            
+            # Initialize heartbeat
+            self.last_message_time = time.time()
+            self.last_keepalive_sent = time.time()
             
             # Start read thread
             self.running = True
@@ -110,6 +136,11 @@ class SerialManager:
             
             print(f"✅ Connected to {port_name}")
             print(f"🔄 Started read thread")
+            
+            # Notify GUI via callback
+            if self.callbacks['CONNECTION_CHANGED']:
+                self.callbacks['CONNECTION_CHANGED'](True)
+            
             return True
         except Exception as e:
             print(f"❌ Connection error: {e}")
@@ -120,6 +151,9 @@ class SerialManager:
         """
         Verbreek de seriële verbinding.
         """
+        # Stop reconnect thread first
+        self.stop_auto_reconnect()
+        
         # Stop read thread
         self.running = False
         if self.read_thread and self.read_thread.is_alive():
@@ -130,20 +164,42 @@ class SerialManager:
             self.port.close()
             self.is_connected = False
             print("🔌 Disconnected")
+            
+            # Notify GUI via callback
+            if self.callbacks['CONNECTION_CHANGED']:
+                self.callbacks['CONNECTION_CHANGED'](False)
     
     def _read_loop(self):
         """
         Background thread die continu data leest van de Pico.
+        
+        Detecteert ook disconnectie door:
+        - Serial errors te monitoren
+        - Timeouts te detecteren
+        - Port status te checken
+        - Stuurt keepalive pings naar Pico
         """
         print("🎧 Read loop started")
         buffer = ""
+        consecutive_errors = 0
+        max_errors = 5  # Na 5 errors -> consider disconnected
         
         while self.running and self.is_connected:
             try:
+                # KEEPALIVE: stuur periodiek ping naar Pico om verbinding te bevestigen
+                if self.keepalive_enabled:
+                    now = time.time()
+                    if now - self.last_keepalive_sent >= self.keepalive_interval:
+                        self.send_message("PING")
+                        self.last_keepalive_sent = now
+                
                 if self.port and self.port.is_open and self.port.in_waiting > 0:
                     # Lees alle beschikbare bytes
                     data = self.port.read(self.port.in_waiting).decode('utf-8', errors='ignore')
                     buffer += data
+                    
+                    # Reset error counter bij succesvolle read
+                    consecutive_errors = 0
                     
                     # Verwerk complete lines
                     while '\n' in buffer:
@@ -153,14 +209,69 @@ class SerialManager:
                         if line:
                             self._handle_incoming_message(line)
                 
+                # Check of port nog steeds open is
+                elif not self.port or not self.port.is_open:
+                    print("❌ Port is no longer open!")
+                    self._handle_disconnection()
+                    break
+                
                 # Kleine pauze om CPU niet te overbelasten
                 time.sleep(0.01)
                 
+            except (serial.SerialException, OSError) as e:
+                # Serial error - mogelijk disconnected
+                consecutive_errors += 1
+                print(f"⚠️ Serial error ({consecutive_errors}/{max_errors}): {e}")
+                
+                if consecutive_errors >= max_errors:
+                    print("❌ Too many errors - device disconnected!")
+                    self._handle_disconnection()
+                    break
+                
+                time.sleep(0.1)
+                
             except Exception as e:
-                print(f"⚠️ Read error: {e}")
+                print(f"⚠️ Unexpected read error: {e}")
+                consecutive_errors += 1
+                
+                if consecutive_errors >= max_errors:
+                    print("❌ Too many errors - stopping read loop")
+                    self._handle_disconnection()
+                    break
+                
                 time.sleep(0.1)
         
         print("🛑 Read loop stopped")
+    
+    def _handle_disconnection(self):
+        """
+        Handle disconnectie - wordt aangeroepen vanuit read thread.
+        
+        Deze methode zorgt ervoor dat:
+        1. De connection status wordt gereset
+        2. De GUI wordt genotificeerd
+        3. Auto-reconnect blijft actief (als dat al draaide)
+        """
+        if not self.is_connected:
+            return  # Already handled
+        
+        print("🔌 Handling disconnection...")
+        
+        # Update status
+        self.is_connected = False
+        
+        # Close port safely
+        try:
+            if self.port and self.port.is_open:
+                self.port.close()
+        except:
+            pass
+        
+        # Notify GUI via callback
+        if self.callbacks['CONNECTION_CHANGED']:
+            self.callbacks['CONNECTION_CHANGED'](False)
+        
+        print("❌ Disconnected - auto-reconnect will continue if enabled")
     
     def _handle_incoming_message(self, message: str):
         """
@@ -169,6 +280,9 @@ class SerialManager:
         Args:
             message: Het ontvangen bericht
         """
+        # Update last message time (voor heartbeat monitoring)
+        self.last_message_time = time.time()
+        
         print(f"📥 Received: {message}")
         
         # Parse message type
@@ -218,8 +332,15 @@ class SerialManager:
             # READY bericht
             elif msg_type == "READY":
                 print(f"🎯 Pico ready: {params}")
-                self.ready_received = True
-                self.ready_event.set()  # Signal dat READY ontvangen is
+                
+                # Alleen eerste keer triggeren
+                if not self.ready_received:
+                    self.ready_received = True
+                    self.ready_event.set()  # Signal dat READY ontvangen is
+                else:
+                    # Herhaalde READY berichten - log maar trigger niet opnieuw
+                    print(f"   (heartbeat - already received)")
+
             
             # Error berichten
             elif msg_type.startswith("ERROR"):
@@ -229,6 +350,13 @@ class SerialManager:
             # Bericht zonder ':'
             if message == "Pong":
                 print("🏓 Pong received")
+                
+                # Als we nog op READY wachten, accepteer Pong als bewijs dat Pico actief is
+                # Dit gebeurt als Pico al verbonden was en niet opnieuw READY stuurt
+                if not self.ready_received:
+                    print("   (accepting Pong as ready signal - Pico was already connected)")
+                    self.ready_received = True
+                    self.ready_event.set()
             else:
                 print(f"ℹ️ Info: {message}")
     
@@ -318,22 +446,26 @@ class SerialManager:
     
     def wait_for_ready(self, timeout: float = 5.0) -> bool:
         """
-        Wacht tot Pico READY stuurt.
+        Wacht tot Pico READY stuurt (of Pong als Pico al connected was).
         
         Deze functie wacht op een threading.Event dat wordt gezet door
-        de read thread wanneer READY ontvangen wordt.
+        de read thread wanneer READY of Pong ontvangen wordt.
         
         Args:
             timeout: Maximum wachttijd in seconden
         
         Returns:
-            True als READY ontvangen, False bij timeout
+            True als READY of Pong ontvangen, False bij timeout
         """
         if not self.is_connected:
             print("❌ Not connected, cannot wait for READY")
             return False
         
         print(f"⏳ Waiting for READY (timeout: {timeout}s)...")
+        
+        # Stuur eerst een PING om te testen of Pico reageert
+        # Als Pico al verbonden was, krijgen we Pong in plaats van READY
+        self.send_ping()
         
         # Wacht op event (thread-safe!)
         ready = self.ready_event.wait(timeout=timeout)
@@ -430,3 +562,119 @@ class SerialManager:
         
         print(f"✅ Sync complete: {count} configs + {len(slider_apps)} sliders")
         return count
+    
+    def start_auto_reconnect(self, port_name: str) -> None:
+        """
+        Start auto-reconnect thread voor een specifieke poort.
+        
+        Deze thread probeert continu te verbinden met de opgegeven poort
+        als de verbinding verbroken is.
+        
+        Args:
+            port_name: COM poort om mee te verbinden (bijv. "COM3")
+        """
+        if self.reconnect_running:
+            print("⚠️ Auto-reconnect already running")
+            return
+        
+        self.preferred_port = port_name
+        self.reconnect_running = True
+        
+        self.reconnect_thread = threading.Thread(
+            target=self._reconnect_loop,
+            daemon=True
+        )
+        self.reconnect_thread.start()
+        
+        print(f"🔄 Auto-reconnect started for {port_name}")
+    
+    def stop_auto_reconnect(self) -> None:
+        """
+        Stop de auto-reconnect thread.
+        """
+        if not self.reconnect_running:
+            return
+        
+        self.reconnect_running = False
+        
+        if self.reconnect_thread and self.reconnect_thread.is_alive():
+            self.reconnect_thread.join(timeout=1.0)
+        
+        print("🛑 Auto-reconnect stopped")
+    
+    def _reconnect_loop(self) -> None:
+        """
+        Background thread die continu probeert te reconnecten.
+        """
+        print(f"🔄 Reconnect loop started for {self.preferred_port}")
+        
+        while self.reconnect_running:
+            # Alleen proberen als niet verbonden
+            if not self.is_connected and self.preferred_port:
+                try:
+                    # Check of de poort beschikbaar is
+                    available_ports = [p[0] for p in self.get_available_ports()]
+                    
+                    if self.preferred_port in available_ports:
+                        print(f"🔌 Attempting to connect to {self.preferred_port}...")
+                        
+                        # Probeer te verbinden
+                        if self.connect(self.preferred_port):
+                            print(f"✅ Auto-reconnect successful!")
+                            # Blijf loop runnen voor het geval van disconnectie
+                        else:
+                            print(f"❌ Connect attempt failed")
+                    
+                except Exception as e:
+                    print(f"❌ Reconnect error: {e}")
+            
+            # Wacht voor volgende poging
+            time.sleep(self.reconnect_interval)
+        
+        print("🛑 Reconnect loop stopped")
+    
+    def check_connection_health(self) -> bool:
+        """
+        Check of de verbinding nog gezond is.
+        
+        Deze methode controleert:
+        1. Of we denken verbonden te zijn
+        2. Of de port nog open is
+        3. Of we recent berichten ontvangen hebben (heartbeat)
+        
+        Returns:
+            True als verbinding gezond is, False als er problemen zijn
+        """
+        if not self.is_connected:
+            return False
+        
+        # Check of port nog open is
+        if not self.port or not self.port.is_open:
+            print("⚠️ Port check failed - not open")
+            self._handle_disconnection()
+            return False
+        
+        # Check heartbeat (optioneel - kan uitgeschakeld als Pico geen regelmatige berichten stuurt)
+        # if time.time() - self.last_message_time > self.heartbeat_timeout:
+        #     print(f"⚠️ Heartbeat timeout ({self.heartbeat_timeout}s)")
+        #     self._handle_disconnection()
+        #     return False
+        
+        return True
+    
+    def get_connection_status(self) -> dict:
+        """
+        Haal gedetailleerde connection status op.
+        
+        Returns:
+            Dict met connection info voor debugging/display
+        """
+        status = {
+            'connected': self.is_connected,
+            'port': self.preferred_port or "None",
+            'port_open': self.port.is_open if self.port else False,
+            'read_thread_alive': self.read_thread.is_alive() if self.read_thread else False,
+            'reconnect_active': self.reconnect_running,
+            'last_message_ago': time.time() - self.last_message_time if self.last_message_time > 0 else -1
+        }
+        return status
