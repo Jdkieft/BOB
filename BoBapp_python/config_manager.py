@@ -286,3 +286,67 @@ class ConfigManager:
         self.config['preferred_port'] = port
         self.save()
         print(f"✅ Preferred port set to {port}")
+    
+    def get_slider_name(self, slider: int) -> str:
+        """
+        Haal de naam van een slider op.
+        
+        Args:
+            slider: Slider nummer (0-3)
+        
+        Returns:
+            Custom naam of standaard naam
+        """
+        key = f"slider_{slider}_name"
+        default_name = "Master Volume" if slider == 3 else f"Slider {slider + 1}"
+        return self.config.get(key, default_name)
+    
+    def set_slider_name(self, slider: int, name: str) -> None:
+        """
+        Stel een custom naam in voor een slider.
+        
+        Args:
+            slider: Slider nummer (0-3)
+            name: Nieuwe naam voor de slider
+        """
+        key = f"slider_{slider}_name"
+        self.config[key] = name
+        self.save()
+        print(f"✅ Slider {slider} renamed to '{name}'")
+    
+    def get_app_display_name(self, original_name: str) -> str:
+        """
+        Haal de display naam op voor een app.
+        
+        Args:
+            original_name: Originele app naam (bijv. "gw2.exe")
+        
+        Returns:
+            Custom display naam of originele naam
+        """
+        mappings = self.config.get('app_name_mappings', {})
+        return mappings.get(original_name, original_name)
+    
+    def set_app_display_name(self, original_name: str, display_name: str) -> None:
+        """
+        Stel een custom display naam in voor een app.
+        
+        Args:
+            original_name: Originele app naam (bijv. "gw2.exe")
+            display_name: Custom display naam (bijv. "Guild Wars 2")
+        """
+        if 'app_name_mappings' not in self.config:
+            self.config['app_name_mappings'] = {}
+        
+        self.config['app_name_mappings'][original_name] = display_name
+        self.save()
+        print(f"✅ App '{original_name}' display name set to '{display_name}'")
+    
+    def get_all_app_name_mappings(self) -> dict:
+        """
+        Haal alle app naam mappings op.
+        
+        Returns:
+            Dict met {original_name: display_name} mappings
+        """
+        return self.config.get('app_name_mappings', {}).copy()

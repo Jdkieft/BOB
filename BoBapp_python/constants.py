@@ -44,8 +44,13 @@ COLOR_BUTTON_NORMAL_DARK = "gray25"
 COLOR_BUTTON_HOVER_LIGHT = "gray70"
 COLOR_BUTTON_HOVER_DARK = "gray35"
 
-COLOR_BUTTON_ACTIVE = "#00AA00"  # Groen voor geconfigureerde buttons
-COLOR_BUTTON_FOCUS = "#3B82F6"   # Blauw voor hover/focus
+# Mooie blauwe accent kleuren (geïnspireerd door moderne UI)
+COLOR_ACCENT = "#3B82F6"           # Moderne blauwe accent
+COLOR_ACCENT_HOVER = "#2563EB"     # Donkerder voor hover
+COLOR_ACCENT_ACTIVE = "#60A5FA"    # Lichter voor active/selected
+
+COLOR_BUTTON_ACTIVE = COLOR_ACCENT_ACTIVE   # Voor geconfigureerde buttons
+COLOR_BUTTON_FOCUS = COLOR_ACCENT           # Voor hover/focus
 
 # Status kleuren
 COLOR_SUCCESS = "green"

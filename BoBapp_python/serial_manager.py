@@ -444,6 +444,20 @@ class SerialManager:
         """Stuur ping voor connection test."""
         return self.send_message("PING")
     
+    def send_spotify_track(self, artist: str, title: str) -> bool:
+        """
+        Stuur Spotify track informatie naar het apparaat.
+        
+        Args:
+            artist: Artiest naam
+            title: Track titel
+        
+        Returns:
+            True als succesvol verzonden
+        """
+        # Gebruik | als separator omdat artist/title ":" kunnen bevatten
+        return self.send_message(f"SPOTIFY:{artist}|{title}")
+    
     def wait_for_ready(self, timeout: float = 5.0) -> bool:
         """
         Wacht tot Pico READY stuurt (of Pong als Pico al connected was).

@@ -185,7 +185,12 @@ class ButtonWidget:
             # Update labels
             self.icon_label.configure(text=config.get('icon', '🎮'))
             self.action_label.configure(text=config.get('label', 'Action'))
-            self.hotkey_label.configure(text=config.get('hotkey', ''))
+            
+            # Check of dit een app launch is
+            if config.get('app_path'):
+                self.hotkey_label.configure(text='🚀 Launch App')
+            else:
+                self.hotkey_label.configure(text=config.get('hotkey', ''))
             
             # Update border naar active kleur
             self.main_frame.configure(border_color=COLOR_BUTTON_ACTIVE)

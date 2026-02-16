@@ -90,10 +90,13 @@ class WizardButtonConfigDialog:
         self.selected_icon = self.current_config.get('icon', '🎮')
         self.selected_label = self.current_config.get('label', '')
         self.selected_hotkey = self.current_config.get('hotkey', '')
-        self.selected_hotkey_type = 'custom'  # 'custom' or 'media'
+        self.selected_app_path = self.current_config.get('app_path', '')
+        self.selected_hotkey_type = 'custom'  # 'custom', 'media', or 'app'
         
-        # Detect if current config is media
-        if self.selected_hotkey:
+        # Detect current config type
+        if self.selected_app_path:
+            self.selected_hotkey_type = 'app'
+        elif self.selected_hotkey:
             is_media = any(mc['hotkey'] == self.selected_hotkey for mc in self.MEDIA_CONTROLS)
             if is_media:
                 self.selected_hotkey_type = 'media'
@@ -225,7 +228,7 @@ class WizardButtonConfigDialog:
         # Update title
         titles = [
             f"Step 1 of {self.total_steps}: Choose Icon & Label",
-            f"Step 2 of {self.total_steps}: Configure Hotkey",
+            f"Step 2 of {self.total_steps}: Choose Action Type",
             f"Step 3 of {self.total_steps}: Preview & Confirm"
         ]
         self.step_title.configure(text=titles[self.current_step])
@@ -479,6 +482,16 @@ class WizardButtonConfigDialog:
         )
         custom_radio.pack(anchor="w", pady=5)
         
+        app_radio = ctk.CTkRadioButton(
+            type_options,
+            text="🚀 Open Application",
+            variable=self.hotkey_type_var,
+            value="app",
+            font=("Roboto", 13),
+            command=self._on_hotkey_type_change
+        )
+        app_radio.pack(anchor="w", pady=5)
+        
         # Content area (changes based on type)
         self.hotkey_content_frame = ctk.CTkFrame(
             scroll_frame,
@@ -504,6 +517,8 @@ class WizardButtonConfigDialog:
         
         if hotkey_type == "media":
             self._show_media_controls()
+        elif hotkey_type == "app":
+            self._show_app_launcher()
         else:
             self._show_custom_hotkey()
     
@@ -674,6 +689,120 @@ class WizardButtonConfigDialog:
         hotkey = "+".join(parts) if parts else "add a main key..."
         self.hotkey_preview_label.configure(text=hotkey)
     
+    def _show_app_launcher(self):
+        """Show application launcher configuration."""
+        import os
+        from tkinter import filedialog
+        
+        ctk.CTkLabel(
+            self.hotkey_content_frame,
+            text="Choose Application to Launch:",
+            font=("Roboto", 14, "bold"),
+            anchor="w"
+        ).pack(padx=15, pady=(15, 10), anchor="w")
+        
+        ctk.CTkLabel(
+            self.hotkey_content_frame,
+            text="Select an executable (.exe) or shortcut (.lnk) to launch when pressing this button",
+            font=("Roboto", 11),
+            text_color="gray",
+            anchor="w",
+            wraplength=600
+        ).pack(padx=15, pady=(0, 20), anchor="w")
+        
+        # Current selection display with better visibility
+        selection_frame = ctk.CTkFrame(
+            self.hotkey_content_frame,
+            fg_color=("gray70", "gray30"),
+            corner_radius=10,
+            height=120
+        )
+        selection_frame.pack(fill="x", padx=15, pady=(0, 20))
+        selection_frame.pack_propagate(False)
+        
+        # Icon/status
+        self.app_icon_label = ctk.CTkLabel(
+            selection_frame,
+            text="📁" if not self.selected_app_path else "✅",
+            font=("Segoe UI Emoji", 40)
+        )
+        self.app_icon_label.pack(pady=(15, 5))
+        
+        # Path label
+        self.app_path_label = ctk.CTkLabel(
+            selection_frame,
+            text=self.selected_app_path if self.selected_app_path else "No application selected yet",
+            font=("Roboto", 11),
+            anchor="center",
+            wraplength=550,
+            text_color=("green" if self.selected_app_path else "gray")
+        )
+        self.app_path_label.pack(padx=20, pady=(0, 15))
+        
+        # Large browse button
+        browse_btn = ctk.CTkButton(
+            self.hotkey_content_frame,
+            text="📂 Browse for Application...",
+            command=self._browse_for_app,
+            height=60,
+            font=("Roboto", 16, "bold"),
+            fg_color=("#3B82F6", "#2563EB"),
+            hover_color=("#2563EB", "#1D4ED8")
+        )
+        browse_btn.pack(fill="x", padx=15, pady=(0, 15))
+        
+        # Help text
+        help_frame = ctk.CTkFrame(
+            self.hotkey_content_frame,
+            fg_color=("gray70", "gray30"),
+            corner_radius=8
+        )
+        help_frame.pack(fill="x", padx=15, pady=(10, 15))
+        
+        ctk.CTkLabel(
+            help_frame,
+            text="💡 Tip: You can select any .exe file on your computer\n"
+                 "Common locations:\n"
+                 "  • C:\\Program Files\\ - for installed programs\n"
+                 "  • Desktop shortcuts (.lnk files)\n"
+                 "  • Start Menu shortcuts",
+            font=("Roboto", 10),
+            justify="left",
+            anchor="w",
+            text_color="gray"
+        ).pack(padx=15, pady=12, anchor="w")
+        
+        ctk.CTkFrame(self.hotkey_content_frame, height=15, fg_color="transparent").pack()
+    
+    def _browse_for_app(self):
+        """Open file browser to select an application."""
+        from tkinter import filedialog
+        import os
+        
+        # Start in Program Files or last selected directory
+        initial_dir = "C:\\Program Files"
+        if self.selected_app_path and os.path.dirname(self.selected_app_path):
+            initial_dir = os.path.dirname(self.selected_app_path)
+        
+        filename = filedialog.askopenfilename(
+            title="Select Application",
+            filetypes=[
+                ("Executable files", "*.exe"),
+                ("Shortcuts", "*.lnk"),
+                ("All files", "*.*")
+            ],
+            initialdir=initial_dir
+        )
+        
+        if filename:
+            self.selected_app_path = filename
+            # Update display with success state
+            self.app_path_label.configure(
+                text=filename,
+                text_color="green"
+            )
+            self.app_icon_label.configure(text="✅")
+    
     # ========================================================================
     # STEP 3: PREVIEW & CONFIRM
     # ========================================================================
@@ -752,10 +881,16 @@ class WizardButtonConfigDialog:
             wraplength=240
         ).place(relx=0.5, rely=0.68, anchor="center")
         
-        # Hotkey
+        # Hotkey or app launch indicator
+        hotkey_text = ""
+        if self.selected_hotkey_type == 'app':
+            hotkey_text = "🚀 Launch App"
+        elif self.selected_hotkey:
+            hotkey_text = self.selected_hotkey[:28]
+        
         ctk.CTkLabel(
             mock_button,
-            text=self.selected_hotkey[:28] if self.selected_hotkey else "",
+            text=hotkey_text,
             font=("Courier", 11, "bold"),
             fg_color=("gray70", "gray30"),
             corner_radius=6,
@@ -778,14 +913,26 @@ class WizardButtonConfigDialog:
         ).pack(pady=(15, 10))
         
         # Details grid
-        details = [
-            ("Button:", f"#{self.button_index + 1}"),
-            ("Mode:", f"Mode {self.mode + 1}"),
-            ("Icon:", self.selected_icon),
-            ("Label:", self.selected_label),
-            ("Hotkey:", self.selected_hotkey),
-            ("Type:", "Media Control" if self.selected_hotkey_type == 'media' else "Custom Shortcut")
-        ]
+        if self.selected_hotkey_type == 'app':
+            # App launch type
+            details = [
+                ("Button:", f"#{self.button_index + 1}"),
+                ("Mode:", f"Mode {self.mode + 1}"),
+                ("Icon:", self.selected_icon),
+                ("Label:", self.selected_label),
+                ("Action:", "Launch Application"),
+                ("App Path:", self.selected_app_path if self.selected_app_path else "Not set")
+            ]
+        else:
+            # Keyboard shortcut type
+            details = [
+                ("Button:", f"#{self.button_index + 1}"),
+                ("Mode:", f"Mode {self.mode + 1}"),
+                ("Icon:", self.selected_icon),
+                ("Label:", self.selected_label),
+                ("Hotkey:", self.selected_hotkey),
+                ("Type:", "Media Control" if self.selected_hotkey_type == 'media' else "Custom Shortcut")
+            ]
         
         for label, value in details:
             row = ctk.CTkFrame(details_frame, fg_color="transparent")
@@ -844,12 +991,15 @@ class WizardButtonConfigDialog:
                 
                 elif self.current_step == 2 and hasattr(self, 'hotkey_type_var'):
                     # Going back from step 3 to step 2
-                    # Try to save hotkey if valid
+                    # Try to save action type if valid
                     if self.hotkey_type_var.get() == "media":
                         hotkey = self.media_var.get()
                         if hotkey:
                             self.selected_hotkey = hotkey
                             self.selected_hotkey_type = 'media'
+                    elif self.hotkey_type_var.get() == "app":
+                        # App launch - keep the selected path
+                        self.selected_hotkey_type = 'app'
                     else:
                         parts = []
                         for name, var in self.modifier_vars.items():
@@ -892,7 +1042,7 @@ class WizardButtonConfigDialog:
                 self.selected_label = label
             
             elif self.current_step == 1:
-                # Step 2: Hotkey
+                # Step 2: Action type (hotkey or app)
                 if self.hotkey_type_var.get() == "media":
                     hotkey = self.media_var.get()
                     if not hotkey:
@@ -902,6 +1052,18 @@ class WizardButtonConfigDialog:
                     # Save values
                     self.selected_hotkey = hotkey
                     self.selected_hotkey_type = 'media'
+                    self.selected_app_path = ''
+                
+                elif self.hotkey_type_var.get() == "app":
+                    # App launch validation
+                    if not self.selected_app_path:
+                        self._show_error("❌ Please select an application!")
+                        return
+                    
+                    # Save values
+                    self.selected_hotkey = ''
+                    self.selected_hotkey_type = 'app'
+                
                 else:
                     # Build custom hotkey
                     parts = []
@@ -919,6 +1081,7 @@ class WizardButtonConfigDialog:
                     # Save values
                     self.selected_hotkey = "+".join(parts)
                     self.selected_hotkey_type = 'custom'
+                    self.selected_app_path = ''
             
             # Go to next step (values are now saved)
             self.current_step += 1
@@ -931,6 +1094,10 @@ class WizardButtonConfigDialog:
             'label': self.selected_label,
             'hotkey': self.selected_hotkey
         }
+        
+        # Add app_path if this is an app launch button
+        if self.selected_hotkey_type == 'app' and self.selected_app_path:
+            new_config['app_path'] = self.selected_app_path
         
         if self.on_save:
             self.on_save(new_config)
