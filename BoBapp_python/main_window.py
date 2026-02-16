@@ -23,6 +23,7 @@ import pyautogui  # Voor hotkey simulatie
 from config_manager import ConfigManager
 from serial_manager import SerialManager
 from audio_manager import AudioManager
+from spotify_manager import SpotifyManager
 
 # Import GUI components
 from button_widget import ButtonWidget
@@ -80,12 +81,16 @@ class StreamDeckManager(ctk.CTk):
         self.config_manager = ConfigManager()
         self.serial_manager = SerialManager()
         self.audio_manager = AudioManager()
+        self.spotify_manager = SpotifyManager()
         
         # Register callbacks voor berichten van Pico
         self.serial_manager.set_callback('BTN_PRESS', self._handle_pico_button_press)
         self.serial_manager.set_callback('SLIDER_CHANGE', self._handle_pico_slider_change)
         self.serial_manager.set_callback('MODE_CHANGE', self._handle_pico_mode_change)
         self.serial_manager.set_callback('CONNECTION_CHANGED', self._handle_connection_changed)
+        
+        # Register Spotify callback
+        self.spotify_manager.set_callback(self._handle_spotify_track_change)
         
         # State
         self.current_mode = 0
@@ -125,16 +130,20 @@ class StreamDeckManager(ctk.CTk):
         header = ctk.CTkFrame(
             self,
             height=HEADER_HEIGHT,
-            fg_color=(COLOR_BACKGROUND_LIGHT, COLOR_BACKGROUND_DARK)
+            fg_color=("gray92", "gray17")  # Subtiele gradient-achtige kleur
         )
         header.pack(fill="x", padx=10, pady=10)
         
-        # Titel
+        # Titel met subtiel gradient effect
+        title_frame = ctk.CTkFrame(header, fg_color="transparent")
+        title_frame.pack(side="left", padx=20)
+        
         ctk.CTkLabel(
-            header,
+            title_frame,
             text="Stream Deck + Audio Sliders",
-            font=FONT_TITLE
-        ).pack(side="left", padx=20)
+            font=FONT_TITLE,
+            text_color=("#2563EB", "#60A5FA")  # Gradient-achtig blauw
+        ).pack()
         
         # Connection status container
         status_container = ctk.CTkFrame(header, fg_color="transparent")
@@ -200,7 +209,11 @@ class StreamDeckManager(ctk.CTk):
     
     def _create_mode_selector(self, parent):
         """Maak mode selector buttons."""
-        mode_frame = ctk.CTkFrame(parent, height=100)
+        mode_frame = ctk.CTkFrame(
+            parent, 
+            height=100,
+            fg_color=("gray88", "gray18")  # Subtiele gradient kleur
+        )
         mode_frame.pack(fill="x", padx=10, pady=10)
         
         # Header met title en add/remove buttons
@@ -262,7 +275,10 @@ class StreamDeckManager(ctk.CTk):
     
     def _create_button_grid(self, parent):
         """Maak 3x3 button grid met betere scaling."""
-        grid_frame = ctk.CTkFrame(parent)
+        grid_frame = ctk.CTkFrame(
+            parent,
+            fg_color=("gray88", "gray18")  # Subtiele gradient achtergrond
+        )
         grid_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Grid title
@@ -297,20 +313,33 @@ class StreamDeckManager(ctk.CTk):
     def _create_slider_panel(self, parent):
         """Maak rechter panel met audio sliders - nu veel breder en beter schalend."""
         # Maak een scrollable frame zodat het altijd past, zelfs op kleine schermen
-        slider_panel = ctk.CTkScrollableFrame(parent, width=500)
+        slider_panel = ctk.CTkScrollableFrame(
+            parent, 
+            width=500,
+            fg_color=("gray90", "gray16")  # Subtiele gradient achtergrond
+        )
         slider_panel.pack(side="right", fill="both", expand=True)
         
-        ctk.CTkLabel(
+        # Header met gradient-achtige styling
+        header_frame = ctk.CTkFrame(
             slider_panel,
+            fg_color="transparent"
+        )
+        header_frame.pack(pady=15, padx=15, fill="x")
+        
+        ctk.CTkLabel(
+            header_frame,
             text="Audio Sliders",
-            font=FONT_HEADER
-        ).pack(pady=15)
+            font=FONT_HEADER,
+            text_color=("#2563EB", "#3B82F6")  # Gradient blauw
+        ).pack()
         
         ctk.CTkLabel(
             slider_panel,
-            text="Koppel apps aan fysieke sliders\nvoor volume control",
-            font=("Roboto", 11),
-            text_color="gray"
+            text="Koppel apps aan fysieke sliders\nvoor volume control\n(Right-click op naam om te hernoemen)",
+            font=("Roboto", 10),
+            text_color="gray",
+            justify="center"
         ).pack(pady=(0, 10))
         
         # Haal beschikbare apps op
@@ -318,6 +347,9 @@ class StreamDeckManager(ctk.CTk):
         
         # Maak sliders (0-2 voor apps, 3 voor master volume)
         for i in range(NUM_SLIDERS):
+            # Haal opgeslagen naam op
+            slider_name = self.config_manager.get_slider_name(i)
+            
             # Slider 3 is master volume (geen apps)
             if i == 3:
                 slider = SliderWidget(
@@ -325,15 +357,28 @@ class StreamDeckManager(ctk.CTk):
                     i,
                     [],  # Geen apps voor master volume
                     on_app_change=self._handle_slider_change,
-                    is_master_volume=True  # Special flag
+                    is_master_volume=True,  # Special flag
+                    slider_name=slider_name
                 )
             else:
                 slider = SliderWidget(
                     slider_panel,
                     i,
                     available_apps,
-                    on_app_change=self._handle_slider_change
+                    on_app_change=self._handle_slider_change,
+                    slider_name=slider_name
                 )
+            
+            # Stel rename callback in
+            slider.set_rename_callback(self._handle_slider_rename)
+            
+            # Stel app rename callback in
+            slider.set_app_rename_callback(self._handle_app_rename)
+            
+            # Laad app naam mappings
+            app_mappings = self.config_manager.get_all_app_name_mappings()
+            slider.set_app_name_mappings(app_mappings)
+            
             self.slider_widgets.append(slider)
     
     # _create_right_panel REMOVED - Quick Actions feature has been removed
@@ -341,7 +386,12 @@ class StreamDeckManager(ctk.CTk):
     
     def _create_info_panel(self, parent):
         """Maak info panel (nu in linker kolom, compacter)."""
-        info_frame = ctk.CTkFrame(parent)
+        info_frame = ctk.CTkFrame(
+            parent,
+            fg_color=("gray85", "gray22"),  # Subtiele gradient kleur
+            border_width=1,
+            border_color=("gray70", "gray35")
+        )
         info_frame.pack(fill="x", padx=10, pady=(5, 5))
         
         ctk.CTkLabel(
@@ -654,7 +704,7 @@ class StreamDeckManager(ctk.CTk):
                 
                 # Update grid title if this is current mode
                 if mode == self.current_mode:
-                    self.grid_title.configure(text=f"📱 Button Grid - {new_name}")
+                    self.grid_title.configure(text=f"Button Grid - {new_name}")
                 
                 self.info_label.configure(
                     text=f"✅ Mode hernoemd!\n\n'{current_name}' → '{new_name}'"
@@ -701,9 +751,15 @@ class StreamDeckManager(ctk.CTk):
         """Update de kleuren van mode buttons."""
         for i, btn in enumerate(self.mode_buttons):
             if i == self.current_mode:
-                btn.configure(fg_color=("#3B82F6", "#1E40AF"))
+                btn.configure(
+                    fg_color=("#3B82F6", "#2563EB"),  # Gradient van licht naar donker blauw
+                    hover_color=("#60A5FA", "#3B82F6")  # Lichter bij hover
+                )
             else:
-                btn.configure(fg_color=("gray60", "gray40"))
+                btn.configure(
+                    fg_color=("gray60", "gray40"),
+                    hover_color=("gray50", "gray50")
+                )
     
     # ========================================================================
     # STATE MANAGEMENT
@@ -737,6 +793,10 @@ class StreamDeckManager(ctk.CTk):
             self.info_label.configure(
                 text=f"🔄 Zoeken naar {preferred_port}...\n\nAuto-reconnect actief.\nSluit je Pico aan om te verbinden."
             )
+        
+        # Start Spotify monitor
+        print("🎵 Starting Spotify monitor...")
+        self.spotify_manager.start()
     
     def _load_button_states(self):
         """Laad button states voor huidige mode."""
@@ -815,6 +875,47 @@ class StreamDeckManager(ctk.CTk):
         
         print(f"Slider {slider_index + 1} → {len(app_names)} apps: {app_names}")
     
+    def _handle_slider_rename(self, slider_index: int, new_name: str):
+        """
+        Handle slider rename.
+        
+        Args:
+            slider_index: Slider nummer (0-3)
+            new_name: Nieuwe naam voor de slider
+        """
+        # Sla op in config
+        self.config_manager.set_slider_name(slider_index, new_name)
+        
+        # Update info label
+        self.info_label.configure(
+            text=f"✅ Slider hernoemd!\n\nSlider {slider_index + 1} → '{new_name}'"
+        )
+        
+        print(f"✅ Slider {slider_index} renamed to '{new_name}'")
+    
+    def _handle_app_rename(self, original_name: str, display_name: str):
+        """
+        Handle app rename.
+        
+        Args:
+            original_name: Originele app naam (bijv. "gw2.exe")
+            display_name: Nieuwe display naam (bijv. "Guild Wars 2")
+        """
+        # Sla op in config
+        self.config_manager.set_app_display_name(original_name, display_name)
+        
+        # Update alle sliders met de nieuwe mapping
+        app_mappings = self.config_manager.get_all_app_name_mappings()
+        for slider in self.slider_widgets:
+            slider.set_app_name_mappings(app_mappings)
+        
+        # Update info label
+        self.info_label.configure(
+            text=f"✅ App hernoemd!\n\n'{original_name}' → '{display_name}'"
+        )
+        
+        print(f"✅ App '{original_name}' renamed to '{display_name}'")
+    
     def _handle_connect_click(self):
         """Handle connect button click - open connection dialog."""
         # Open de nieuwe connection dialog
@@ -884,18 +985,18 @@ class StreamDeckManager(ctk.CTk):
         
         # Update visual status
         if self.serial_manager.is_connected and is_healthy:
-            # Alles goed - groene dot
-            self.status_indicator.configure(text="🟢", text_color="green")
+            # Alles goed - blauwe indicator
+            self.status_indicator.configure(text="●", text_color="#3B82F6")
             port = self.serial_manager.preferred_port or "Unknown"
-            self.status_text.configure(text=f"Verbonden met {port}", text_color="green")
+            self.status_text.configure(text=f"Verbonden met {port}", text_color="#3B82F6")
         elif self.serial_manager.reconnect_running and self.serial_manager.preferred_port:
-            # Auto-reconnect actief - oranje dot
-            self.status_indicator.configure(text="🟠", text_color="orange")
+            # Auto-reconnect actief - oranje indicator
+            self.status_indicator.configure(text="●", text_color="orange")
             port = self.serial_manager.preferred_port
             self.status_text.configure(text=f"Zoeken naar {port}...", text_color="orange")
         else:
-            # Niet verbonden - grijze dot
-            self.status_indicator.configure(text="⚫", text_color="gray")
+            # Niet verbonden - grijze indicator
+            self.status_indicator.configure(text="●", text_color="gray")
             self.status_text.configure(text="Niet verbonden", text_color="gray")
         
         # Schedule volgende update
@@ -1027,7 +1128,7 @@ class StreamDeckManager(ctk.CTk):
         
         # Update grid title
         mode_name = self.config_manager.get_mode_name(mode)
-        self.grid_title.configure(text=f"📱 Button Grid - {mode_name}")
+        self.grid_title.configure(text=f"Button Grid - {mode_name}")
         
         # Reload button states
         self._load_button_states()
@@ -1062,12 +1163,45 @@ class StreamDeckManager(ctk.CTk):
             print(f"⚠️  Button {button} in mode {mode} not configured")
             return
         
-        # Haal hotkey op
-        hotkey = config.get('hotkey', '')
         label = config.get('label', 'Unknown')
         
+        # Check of dit een app launch is
+        app_path = config.get('app_path', '')
+        if app_path:
+            # Launch application
+            try:
+                import subprocess
+                import os
+                
+                print(f"🚀 Launching application: {app_path}")
+                
+                # Use subprocess to launch the app
+                if os.path.exists(app_path):
+                    subprocess.Popen([app_path], shell=True)
+                    print(f"✅ Application '{label}' launched successfully")
+                    
+                    # Update UI
+                    self.after(0, lambda: self.info_label.configure(
+                        text=f"🚀 App Launched!\n\n{label}\n\n{os.path.basename(app_path)}"
+                    ))
+                else:
+                    print(f"❌ Application not found: {app_path}")
+                    self.after(0, lambda: self.info_label.configure(
+                        text=f"❌ App Not Found!\n\n{label}\n\n{app_path}"
+                    ))
+                    
+            except Exception as e:
+                print(f"❌ Error launching app '{app_path}': {e}")
+                self.after(0, lambda: self.info_label.configure(
+                    text=f"❌ Launch Error!\n\n{label}\n\n{str(e)}"
+                ))
+            return
+        
+        # Otherwise, execute hotkey
+        hotkey = config.get('hotkey', '')
+        
         if not hotkey:
-            print(f"⚠️  No hotkey configured for button {button}")
+            print(f"⚠️  No hotkey or app configured for button {button}")
             return
         
         # Simuleer de hotkey!
@@ -1165,6 +1299,23 @@ class StreamDeckManager(ctk.CTk):
         # Update de GUI om te synchroniseren met Pico
         # Gebruik after() om thread-safe te zijn
         self.after(0, lambda: self.switch_mode(mode))
+    
+    def _handle_spotify_track_change(self, artist: str, title: str):
+        """
+        Callback wanneer Spotify track wijzigt.
+        Stuurt track info naar Pico voor display.
+        
+        Args:
+            artist: Artiest naam
+            title: Track titel
+        """
+        if not self.serial_manager.is_connected:
+            return
+        
+        # Stuur naar Pico via serial_manager
+        self.serial_manager.send_spotify_track(artist, title)
+        
+        print(f"🎵 Spotify → Pico: {artist} - {title}")
     
     # ========================================================================
     # CLEANUP & SYSTEM TRAY
@@ -1317,6 +1468,11 @@ class StreamDeckManager(ctk.CTk):
                 except:
                     pass
                 self.system_tray_active = False
+            
+            # Stop Spotify monitor
+            if hasattr(self, 'spotify_manager'):
+                print("   Stopping Spotify monitor...")
+                self.spotify_manager.stop()
             
             # Stop auto-reconnect eerst
             if self.serial_manager.reconnect_running:

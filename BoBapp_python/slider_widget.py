@@ -54,7 +54,8 @@ class SliderWidget:
         index: int,
         available_apps: List[str],
         on_app_change: Callable[[int, List[str]], None],
-        is_master_volume: bool = False
+        is_master_volume: bool = False,
+        slider_name: str = None
     ):
         """
         Initialiseer een nieuwe slider widget.
@@ -65,19 +66,28 @@ class SliderWidget:
             available_apps: List van beschikbare app namen (leeg voor master)
             on_app_change: Callback (slider_index, app_list) bij wijziging
             is_master_volume: True als dit de master volume slider is
+            slider_name: Custom naam voor de slider (optioneel)
         """
         self.index = index
         self.on_app_change = on_app_change
         self.is_master_volume = is_master_volume
         self.assigned_apps = []
         
-        # Maak container frame
+        # Sla slider naam op
+        if slider_name:
+            self.slider_name = slider_name
+        elif is_master_volume:
+            self.slider_name = "Master Volume"
+        else:
+            self.slider_name = f"Slider {index + 1}"
+        
+        # Maak container frame met subtiele gradient
         self.frame = ctk.CTkFrame(
             parent,
             corner_radius=15,
             fg_color=(COLOR_BUTTON_NORMAL_LIGHT, COLOR_BUTTON_NORMAL_DARK),
             border_width=2,
-            border_color=(COLOR_BUTTON_HOVER_LIGHT, COLOR_BUTTON_HOVER_DARK)
+            border_color=("gray75", "gray30")  # Subtiele border
         )
         self.frame.pack(pady=8, padx=15, fill="x")
         
@@ -92,13 +102,18 @@ class SliderWidget:
         header_row = ctk.CTkFrame(self.frame, fg_color="transparent")
         header_row.pack(fill="x", padx=15, pady=10)
         
-        # Icon + Title links
-        ctk.CTkLabel(
+        # Icon + Title links (klikbaar voor rename)
+        self.header_label = ctk.CTkLabel(
             header_row,
-            text=f"🔊 Master Volume",
+            text=f"{self.slider_name}",
             font=("Roboto", 16, "bold"),
-            text_color="orange"
-        ).pack(side="left")
+            text_color="orange",
+            cursor="hand2"
+        )
+        self.header_label.pack(side="left")
+        
+        # Bind right-click voor rename
+        self.header_label.bind("<Button-3>", lambda e: self._show_rename_dialog())
         
         # Volume display rechts
         self.volume_label = ctk.CTkLabel(
@@ -116,13 +131,16 @@ class SliderWidget:
             text_color="gray"
         ).pack(side="right", padx=(0, 3))
         
-        # Progress bar onder header (full width)
+        # Progress bar onder header (full width, mooier gestyled)
         self.progress_bar = ctk.CTkProgressBar(
             self.frame,
-            height=8
+            height=12,
+            corner_radius=6,
+            progress_color="#3B82F6",  # Zelfde blauwe accent
+            fg_color=("gray85", "gray20")
         )
         self.progress_bar.set(0.5)
-        self.progress_bar.pack(pady=(0, 10), padx=15, fill="x")
+        self.progress_bar.pack(pady=(5, 10), padx=15, fill="x")
         
         # Dummy vars voor compatibiliteit
         self.apps_container = None
@@ -133,13 +151,17 @@ class SliderWidget:
     
     def _create_app_slider_layout(self, available_apps: List[str]):
         """Maak compacte app slider layout - horizontaal."""
-        # Header
-        header = ctk.CTkLabel(
+        # Header (klikbaar voor rename)
+        self.header_label = ctk.CTkLabel(
             self.frame,
-            text=f"🎚️ Slider {self.index + 1}",
-            font=("Roboto", 16, "bold")
+            text=f"{self.slider_name}",
+            font=("Roboto", 16, "bold"),
+            cursor="hand2"
         )
-        header.pack(pady=(12, 8))
+        self.header_label.pack(pady=(12, 8))
+        
+        # Bind right-click voor rename
+        self.header_label.bind("<Button-3>", lambda e: self._show_rename_dialog())
         
         # Main content: HORIZONTALE layout
         content_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
@@ -191,7 +213,9 @@ class SliderWidget:
         # Dropdown menu
         self.available_apps = available_apps
         self.app_var = ctk.StringVar(value="")
-        menu_options = ["Selecteer..."] + available_apps
+        
+        # Maak menu options met display namen
+        menu_options = ["Selecteer..."] + [self._get_app_display_name(app) for app in available_apps]
         
         self.app_menu = ctk.CTkOptionMenu(
             right_frame,
@@ -227,14 +251,27 @@ class SliderWidget:
         self.progress_bar = ctk.CTkProgressBar(
             right_frame,
             width=140,
-            height=6
+            height=10,
+            corner_radius=5,
+            progress_color="#3B82F6",  # Moderne blauwe accent
+            fg_color=("gray85", "gray20")
         )
         self.progress_bar.set(0.5)
-        self.progress_bar.pack()
+        self.progress_bar.pack(pady=5)
     
-    def _handle_app_select(self, app_name: str):
+    def _handle_app_select(self, selected_display_name: str):
         """Handle app selectie uit dropdown."""
-        if app_name == "Selecteer...":
+        if selected_display_name == "Selecteer...":
+            return
+        
+        # Vertaal display naam terug naar originele app naam
+        app_name = None
+        for original in self.available_apps:
+            if self._get_app_display_name(original) == selected_display_name:
+                app_name = original
+                break
+        
+        if app_name is None:
             return
         
         # Add to this slider group
@@ -262,6 +299,9 @@ class SliderWidget:
         except:
             pass
         
+        # Haal display naam op
+        display_name = self._get_app_display_name(app_name)
+        
         # App tag frame (compact)
         tag_frame = ctk.CTkFrame(
             self.apps_container,
@@ -272,14 +312,18 @@ class SliderWidget:
         tag_frame.pack(fill="x", pady=2, padx=3)
         tag_frame.pack_propagate(False)
         
-        # App name label
+        # App name label (klikbaar voor rename)
         app_label = ctk.CTkLabel(
             tag_frame,
-            text=app_name,
+            text=display_name,
             font=("Roboto", 12),
-            anchor="w"
+            anchor="w",
+            cursor="hand2"
         )
         app_label.pack(side="left", padx=8, fill="x", expand=True)
+        
+        # Bind right-click voor rename
+        app_label.bind("<Button-3>", lambda e: self._show_app_rename_dialog(app_name, app_label))
         
         # Remove button (klein)
         remove_btn = ctk.CTkButton(
@@ -321,10 +365,18 @@ class SliderWidget:
             self.empty_label.pack(pady=15)
     
     def update_volume_display(self, volume: float):
-        """Update de visuele volume weergave."""
+        """Update de visuele volume weergave met smooth animation."""
         volume = max(0.0, min(1.0, volume))
         
-        # Update progress bar
+        # Cancel any ongoing animation
+        if hasattr(self, '_animation_id') and self._animation_id:
+            try:
+                self.frame.after_cancel(self._animation_id)
+            except:
+                pass
+            self._animation_id = None
+        
+        # Direct set voor snelle respons
         self.progress_bar.set(volume)
         
         # Update percentage label
@@ -337,7 +389,8 @@ class SliderWidget:
             return
         
         self.available_apps = apps
-        menu_options = ["Selecteer..."] + apps
+        # Gebruik display namen in dropdown
+        menu_options = ["Selecteer..."] + [self._get_app_display_name(app) for app in apps]
         self.app_menu.configure(values=menu_options)
     
     def get_assigned_apps(self) -> List[str]:
@@ -368,3 +421,258 @@ class SliderWidget:
     def get_frame(self) -> ctk.CTkFrame:
         """Geef het container frame terug."""
         return self.frame
+    
+    def _show_rename_dialog(self):
+        """Toon dialog om slider naam te wijzigen."""
+        # Import hier om circular import te voorkomen
+        import customtkinter as ctk
+        
+        # Maak dialog window
+        dialog = ctk.CTkToplevel()
+        dialog.title(f"Rename {self.slider_name}")
+        dialog.geometry("450x220")
+        dialog.grab_set()
+        
+        # Center on screen
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (450 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (220 // 2)
+        dialog.geometry(f"450x220+{x}+{y}")
+        
+        ctk.CTkLabel(
+            dialog,
+            text=f"✏️ Rename {self.slider_name}",
+            font=("Roboto", 20, "bold")
+        ).pack(pady=20)
+        
+        ctk.CTkLabel(
+            dialog,
+            text="Enter new name:",
+            font=("Roboto", 12),
+            text_color="gray"
+        ).pack(pady=(0, 5))
+        
+        # Name entry
+        name_entry = ctk.CTkEntry(
+            dialog,
+            width=350,
+            height=45,
+            placeholder_text="e.g. Gaming Audio, Music, Discord...",
+            font=("Roboto", 14)
+        )
+        name_entry.insert(0, self.slider_name)
+        name_entry.pack(pady=10)
+        name_entry.focus()
+        
+        # Select all text
+        name_entry.select_range(0, 'end')
+        
+        def save_name():
+            new_name = name_entry.get().strip()
+            if new_name and len(new_name) <= 30:
+                self.slider_name = new_name
+                self.header_label.configure(text=new_name)
+                
+                # Callback naar main window om op te slaan
+                if hasattr(self, 'on_rename_callback') and self.on_rename_callback:
+                    self.on_rename_callback(self.index, new_name)
+                
+                dialog.destroy()
+            elif len(new_name) > 30:
+                error_label = ctk.CTkLabel(
+                    dialog,
+                    text="❌ Naam te lang! (max 30 karakters)",
+                    font=("Roboto", 11, "bold"),
+                    text_color="red"
+                )
+                error_label.pack(pady=5)
+                dialog.after(2000, error_label.destroy)
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            width=150,
+            height=40,
+            font=("Roboto", 13)
+        ).pack(side="left", padx=10)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="💾 Save Name",
+            command=save_name,
+            width=150,
+            height=40,
+            font=("Roboto", 13, "bold"),
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side="right", padx=10)
+        
+        # Enter key to save
+        name_entry.bind("<Return>", lambda e: save_name())
+    
+    def set_rename_callback(self, callback: Callable[[int, str], None]):
+        """Stel callback in voor rename event."""
+        self.on_rename_callback = callback
+    
+    def _show_app_rename_dialog(self, original_app_name: str, label_widget):
+        """Toon dialog om app display naam te wijzigen."""
+        import customtkinter as ctk
+        
+        # Haal huidige display naam op (of gebruik origineel)
+        current_display = self._get_app_display_name(original_app_name)
+        
+        # Maak dialog
+        dialog = ctk.CTkToplevel()
+        dialog.title(f"Rename {original_app_name}")
+        dialog.geometry("450x240")
+        dialog.grab_set()
+        
+        # Center on screen
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (450 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (240 // 2)
+        dialog.geometry(f"450x240+{x}+{y}")
+        
+        ctk.CTkLabel(
+            dialog,
+            text=f"✏️ Rename App",
+            font=("Roboto", 20, "bold")
+        ).pack(pady=15)
+        
+        ctk.CTkLabel(
+            dialog,
+            text=f"Original: {original_app_name}",
+            font=("Roboto", 11),
+            text_color="gray"
+        ).pack(pady=(0, 5))
+        
+        ctk.CTkLabel(
+            dialog,
+            text="Display name:",
+            font=("Roboto", 12),
+            text_color="gray"
+        ).pack(pady=(0, 5))
+        
+        # Name entry
+        name_entry = ctk.CTkEntry(
+            dialog,
+            width=350,
+            height=45,
+            placeholder_text="e.g. Guild Wars 2, Discord, Spotify...",
+            font=("Roboto", 14)
+        )
+        name_entry.insert(0, current_display)
+        name_entry.pack(pady=10)
+        name_entry.focus()
+        name_entry.select_range(0, 'end')
+        
+        def save_name():
+            new_name = name_entry.get().strip()
+            if new_name and len(new_name) <= 40:
+                # Sla mapping op
+                self._set_app_display_name(original_app_name, new_name)
+                
+                # Update label
+                label_widget.configure(text=new_name)
+                
+                # Callback naar main window om mapping op te slaan
+                if hasattr(self, 'on_app_rename_callback') and self.on_app_rename_callback:
+                    self.on_app_rename_callback(original_app_name, new_name)
+                
+                dialog.destroy()
+            elif len(new_name) > 40:
+                error_label = ctk.CTkLabel(
+                    dialog,
+                    text="❌ Naam te lang! (max 40 karakters)",
+                    font=("Roboto", 11, "bold"),
+                    text_color="red"
+                )
+                error_label.pack(pady=5)
+                dialog.after(2000, error_label.destroy)
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=15)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            width=130,
+            height=40,
+            font=("Roboto", 13)
+        ).pack(side="left", padx=10)
+        
+        # Reset button
+        def reset_name():
+            name_entry.delete(0, 'end')
+            name_entry.insert(0, original_app_name)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="🔄 Reset",
+            command=reset_name,
+            width=130,
+            height=40,
+            font=("Roboto", 13),
+            fg_color="orange",
+            hover_color="darkorange"
+        ).pack(side="left", padx=10)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="💾 Save",
+            command=save_name,
+            width=130,
+            height=40,
+            font=("Roboto", 13, "bold"),
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side="right", padx=10)
+        
+        # Enter key to save
+        name_entry.bind("<Return>", lambda e: save_name())
+    
+    def set_app_rename_callback(self, callback: Callable[[str, str], None]):
+        """Stel callback in voor app rename event."""
+        self.on_app_rename_callback = callback
+    
+    def _get_app_display_name(self, original_name: str) -> str:
+        """Haal display naam op voor een app (of origineel als geen mapping)."""
+        if not hasattr(self, 'app_name_mapping'):
+            self.app_name_mapping = {}
+        return self.app_name_mapping.get(original_name, original_name)
+    
+    def _set_app_display_name(self, original_name: str, display_name: str):
+        """Stel display naam in voor een app."""
+        if not hasattr(self, 'app_name_mapping'):
+            self.app_name_mapping = {}
+        self.app_name_mapping[original_name] = display_name
+    
+    def set_app_name_mappings(self, mappings: dict):
+        """Stel alle app naam mappings in (bij laden config)."""
+        self.app_name_mapping = mappings.copy()
+        
+        # Update dropdown menu als die bestaat
+        if self.app_menu is not None and hasattr(self, 'available_apps'):
+            menu_options = ["Selecteer..."] + [self._get_app_display_name(app) for app in self.available_apps]
+            self.app_menu.configure(values=menu_options)
+        
+        # Update alle bestaande labels
+        if self.apps_container and not self.is_master_volume:
+            for widget in self.apps_container.winfo_children():
+                if isinstance(widget, ctk.CTkFrame):
+                    # Dit is een tag frame
+                    for child in widget.winfo_children():
+                        if isinstance(child, ctk.CTkLabel):
+                            # Dit is de app naam label
+                            current_text = child.cget("text")
+                            # Check of dit een originele app naam is
+                            if current_text in mappings:
+                                child.configure(text=mappings[current_text])
+                            break
