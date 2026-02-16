@@ -1,11 +1,11 @@
 """
-Main Window - Stream Deck Manager GUI (FINAL VERSION)
+Main Window - Stream Deck Manager GUI (IMPROVED LAYOUT VERSION)
 
 Dit hoofdvenster bevat:
 - Header met connectie status
 - Button grid (3x3) met mode selector
-- Audio sliders panel
-- Quick actions en info panel
+- Audio sliders panel (breder en beter schalend)
+- Info panel en export/import functionaliteit
 """
 
 import sys
@@ -27,14 +27,15 @@ from audio_manager import AudioManager
 # Import GUI components
 from button_widget import ButtonWidget
 from slider_widget import SliderWidget
-from dialogs import ButtonConfigDialog, SerialPortDialog
+from dialogs import ButtonConfigDialog
+from dialogs_connection import ConnectionDialog
 
 # Import constants
 from constants import (
     WINDOW_WIDTH, WINDOW_HEIGHT, HEADER_HEIGHT,
     DEFAULT_MODES, MAX_MODES_LIMIT, MIN_MODES, BUTTONS_PER_MODE, NUM_SLIDERS,
-    FONT_TITLE, FONT_HEADER, QUICK_ACTIONS,
-    MSG_NO_DEVICES, MSG_INFO_DEFAULT, MSG_INFO_QUICK_ACTION,
+    FONT_TITLE, FONT_HEADER,
+    MSG_NO_DEVICES, MSG_INFO_DEFAULT,
     COLOR_BACKGROUND_LIGHT, COLOR_BACKGROUND_DARK,
     COLOR_SUCCESS, COLOR_ERROR
 )
@@ -68,6 +69,9 @@ class StreamDeckManager(ctk.CTk):
         self.title("Stream Deck Manager")
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         
+        # Bind window close event voor cleanup
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
+        
         # Appearance
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -81,6 +85,7 @@ class StreamDeckManager(ctk.CTk):
         self.serial_manager.set_callback('BTN_PRESS', self._handle_pico_button_press)
         self.serial_manager.set_callback('SLIDER_CHANGE', self._handle_pico_slider_change)
         self.serial_manager.set_callback('MODE_CHANGE', self._handle_pico_mode_change)
+        self.serial_manager.set_callback('CONNECTION_CHANGED', self._handle_connection_changed)
         
         # State
         self.current_mode = 0
@@ -92,8 +97,16 @@ class StreamDeckManager(ctk.CTk):
         self.slider_widgets: List[SliderWidget] = []
         self.mode_buttons: List[ctk.CTkButton] = []
         
+        # System tray
+        self.system_tray_available = False
+        self.system_tray_active = False
+        self.tray_icon = None
+        
         # Maak UI
         self._create_layout()
+        
+        # Maak system tray icon
+        self._create_system_tray()
         
         # Laad opgeslagen state
         self._load_initial_state()
@@ -123,36 +136,67 @@ class StreamDeckManager(ctk.CTk):
             font=FONT_TITLE
         ).pack(side="left", padx=20)
         
-        # Connect button (status wordt getoond in de button zelf)
+        # Connection status container
+        status_container = ctk.CTkFrame(header, fg_color="transparent")
+        status_container.pack(side="right", padx=20)
+        
+        # Status indicator (animated dot)
+        self.status_indicator = ctk.CTkLabel(
+            status_container,
+            text="⚫",
+            font=("Roboto", 20),
+            text_color="gray"
+        )
+        self.status_indicator.pack(side="left", padx=(0, 10))
+        
+        # Status text
+        self.status_text = ctk.CTkLabel(
+            status_container,
+            text="Niet verbonden",
+            font=("Roboto", 13),
+            text_color="gray"
+        )
+        self.status_text.pack(side="left", padx=(0, 15))
+        
+        # Connect button
         self.serial_button = ctk.CTkButton(
-            header,
-            text="🔌 Connect",
+            status_container,
+            text="⚙️ Configureer",
             command=self._handle_connect_click,
             width=140,
-            height=40
+            height=40,
+            font=("Roboto", 12, "bold")
         )
-        self.serial_button.pack(side="right", padx=20)
+        self.serial_button.pack(side="left")
+        
+        # Start status update loop
+        self._update_connection_status()
     
     def _create_main_container(self):
         """Maak main container met alle panels."""
         main_container = ctk.CTkFrame(self)
         main_container.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Drie kolommen: buttons, sliders, quick actions
+        # Twee kolommen: buttons (links) en sliders (rechts, breder)
         self._create_button_panel(main_container)
         self._create_slider_panel(main_container)
-        self._create_right_panel(main_container)
     
     def _create_button_panel(self, parent):
-        """Maak linker panel met button grid."""
-        left_panel = ctk.CTkFrame(parent, width=650)
+        """Maak linker panel met button grid, info en export/import."""
+        left_panel = ctk.CTkFrame(parent)
         left_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
         
         # Mode selector
         self._create_mode_selector(left_panel)
         
-        # Button grid
+        # Button grid (met expand voor betere scaling)
         self._create_button_grid(left_panel)
+        
+        # Info panel onderaan
+        self._create_info_panel(left_panel)
+        
+        # Export/Import buttons onderaan
+        self._create_export_import_buttons(left_panel)
     
     def _create_mode_selector(self, parent):
         """Maak mode selector buttons."""
@@ -217,7 +261,7 @@ class StreamDeckManager(ctk.CTk):
         self._rebuild_mode_buttons()
     
     def _create_button_grid(self, parent):
-        """Maak 3x3 button grid."""
+        """Maak 3x3 button grid met betere scaling."""
         grid_frame = ctk.CTkFrame(parent)
         grid_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
@@ -229,9 +273,13 @@ class StreamDeckManager(ctk.CTk):
         )
         self.grid_title.pack(pady=15)
         
-        # Button container
-        self.button_grid_frame = ctk.CTkFrame(grid_frame)
-        self.button_grid_frame.pack(pady=10, padx=20)
+        # Button container (centraal gepositioneerd, schaalt niet extreem ver uit)
+        button_container = ctk.CTkFrame(grid_frame, fg_color="transparent")
+        button_container.pack(expand=True, pady=10)
+        
+        # Inner grid frame voor de buttons zelf
+        self.button_grid_frame = ctk.CTkFrame(button_container, fg_color="transparent")
+        self.button_grid_frame.pack()
         
         # Maak 9 buttons (3x3)
         for row in range(3):
@@ -247,18 +295,19 @@ class StreamDeckManager(ctk.CTk):
                 self.button_widgets.append(button)
     
     def _create_slider_panel(self, parent):
-        """Maak middle panel met audio sliders."""
-        middle_panel = ctk.CTkFrame(parent, width=350)
-        middle_panel.pack(side="left", fill="both", padx=(0, 10))
+        """Maak rechter panel met audio sliders - nu veel breder en beter schalend."""
+        # Maak een scrollable frame zodat het altijd past, zelfs op kleine schermen
+        slider_panel = ctk.CTkScrollableFrame(parent, width=500)
+        slider_panel.pack(side="right", fill="both", expand=True)
         
         ctk.CTkLabel(
-            middle_panel,
+            slider_panel,
             text="Audio Sliders",
             font=FONT_HEADER
         ).pack(pady=15)
         
         ctk.CTkLabel(
-            middle_panel,
+            slider_panel,
             text="Koppel apps aan fysieke sliders\nvoor volume control",
             font=("Roboto", 11),
             text_color="gray"
@@ -272,7 +321,7 @@ class StreamDeckManager(ctk.CTk):
             # Slider 3 is master volume (geen apps)
             if i == 3:
                 slider = SliderWidget(
-                    middle_panel,
+                    slider_panel,
                     i,
                     [],  # Geen apps voor master volume
                     on_app_change=self._handle_slider_change,
@@ -280,89 +329,55 @@ class StreamDeckManager(ctk.CTk):
                 )
             else:
                 slider = SliderWidget(
-                    middle_panel,
+                    slider_panel,
                     i,
                     available_apps,
                     on_app_change=self._handle_slider_change
                 )
             self.slider_widgets.append(slider)
     
-    def _create_right_panel(self, parent):
-        """Maak rechter panel met quick actions en info."""
-        right_panel = ctk.CTkFrame(parent, width=350)
-        right_panel.pack(side="right", fill="both")
-        
-        # Quick actions
-        self._create_quick_actions(right_panel)
-        
-        # Info panel
-        self._create_info_panel(right_panel)
-        
-        # Export/Import buttons
-        self._create_export_import_buttons(right_panel)
-    
-    def _create_quick_actions(self, parent):
-        """Maak quick actions lijst."""
-        ctk.CTkLabel(
-            parent,
-            text="⚡ Quick Actions",
-            font=("Roboto", 18, "bold")
-        ).pack(pady=15)
-        
-        quick_frame = ctk.CTkScrollableFrame(parent, height=300)
-        quick_frame.pack(fill="x", padx=10, pady=10)
-        
-        # Maak button voor elke quick action
-        for action in QUICK_ACTIONS:
-            btn = ctk.CTkButton(
-                quick_frame,
-                text=f"{action['icon']} {action['name']}",
-                command=lambda a=action: self._show_quick_action_info(a),
-                height=45,
-                font=("Roboto", 13),
-                anchor="w",
-                fg_color=("gray70", "gray30"),
-                hover_color=("gray60", "gray40")
-            )
-            btn.pack(fill="x", pady=3, padx=5)
+    # _create_right_panel REMOVED - Quick Actions feature has been removed
+    # Info panel and export/import buttons are now in the left column
     
     def _create_info_panel(self, parent):
-        """Maak info panel."""
+        """Maak info panel (nu in linker kolom, compacter)."""
         info_frame = ctk.CTkFrame(parent)
-        info_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        info_frame.pack(fill="x", padx=10, pady=(5, 5))
         
         ctk.CTkLabel(
             info_frame,
             text="ℹ️ Info",
             font=("Roboto", 14, "bold")
-        ).pack(pady=10)
+        ).pack(pady=(10, 5))
         
         self.info_label = ctk.CTkLabel(
             info_frame,
             text=MSG_INFO_DEFAULT,
             font=("Roboto", 11),
-            wraplength=300,
-            justify="left"
+            wraplength=600,
+            justify="center"
         )
-        self.info_label.pack(pady=10, padx=10)
+        self.info_label.pack(pady=(5, 10), padx=10)
     
     def _create_export_import_buttons(self, parent):
-        """Maak export/import buttons."""
+        """Maak export/import buttons (nu in linker kolom)."""
         button_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        button_frame.pack(fill="x", padx=10, pady=10)
+        button_frame.pack(fill="x", padx=10, pady=(5, 10))
         
         ctk.CTkButton(
             button_frame,
-            text="📤 Export",
+            text="📤 Export Config",
             command=self._handle_export,
-            height=35
+            height=40,
+            font=("Roboto", 12, "bold")
         ).pack(side="left", padx=5, expand=True, fill="x")
         
         ctk.CTkButton(
             button_frame,
-            text="📥 Import",
+            text="📥 Import Config",
             command=self._handle_import,
-            height=35
+            height=40,
+            font=("Roboto", 12, "bold")
         ).pack(side="right", padx=5, expand=True, fill="x")
     
     # ========================================================================
@@ -712,6 +727,16 @@ class StreamDeckManager(ctk.CTk):
                 self.slider_apps[i] = []
             
             self.slider_widgets[i].set_assigned_apps(self.slider_apps[i])
+        
+        # Check voor preferred port en start auto-reconnect
+        preferred_port = self.config_manager.get_preferred_port()
+        if preferred_port:
+            print(f"🔄 Preferred port found: {preferred_port}")
+            print(f"🔄 Starting auto-reconnect...")
+            self.serial_manager.start_auto_reconnect(preferred_port)
+            self.info_label.configure(
+                text=f"🔄 Zoeken naar {preferred_port}...\n\nAuto-reconnect actief.\nSluit je Pico aan om te verbinden."
+            )
     
     def _load_button_states(self):
         """Laad button states voor huidige mode."""
@@ -791,20 +816,90 @@ class StreamDeckManager(ctk.CTk):
         print(f"Slider {slider_index + 1} → {len(app_names)} apps: {app_names}")
     
     def _handle_connect_click(self):
-        """Handle connect button click."""
-        # Haal beschikbare poorten op
-        ports = self.serial_manager.get_available_ports()
-        
-        if not ports:
-            self.info_label.configure(text=MSG_NO_DEVICES)
-            return
-        
-        # Open port selector dialog
-        SerialPortDialog(
+        """Handle connect button click - open connection dialog."""
+        # Open de nieuwe connection dialog
+        ConnectionDialog(
             self,
-            ports,
-            on_connect=self._connect_to_port
+            self.serial_manager,
+            self.config_manager,
+            on_port_selected=self._on_port_selected
         )
+    
+    def _on_port_selected(self, port_name: str):
+        """
+        Callback wanneer een poort geselecteerd wordt.
+        
+        Args:
+            port_name: De geselecteerde COM poort naam
+        """
+        print(f"📌 Port selected: {port_name}")
+        self.info_label.configure(
+            text=f"🔄 Auto-reconnect actief voor:\n{port_name}\n\nZodra de Pico verbonden is,\nwordt automatisch gesynchroniseerd."
+        )
+    
+    def _handle_connection_changed(self, is_connected: bool):
+        """
+        Callback wanneer connection status verandert.
+        
+        Args:
+            is_connected: True als verbonden, False als disconnected
+        """
+        if is_connected:
+            # We zijn verbonden!
+            self.status_indicator.configure(text="🟡", text_color="orange")
+            self.status_text.configure(text="Verbonden - Wachten...", text_color="orange")
+            
+            port_name = self.serial_manager.preferred_port or "Unknown"
+            self.info_label.configure(
+                text=f"⏳ Connected to:\n{port_name}\n\nWaiting for Pico READY..."
+            )
+            
+            # Wait for READY signal in background
+            self.after(100, lambda: self._wait_for_ready_and_sync(port_name))
+        else:
+            # Verbinding verbroken
+            self.status_indicator.configure(text="🔴", text_color="red")
+            
+            preferred = self.config_manager.get_preferred_port()
+            if preferred:
+                self.status_text.configure(
+                    text=f"Zoeken naar {preferred}...",
+                    text_color="orange"
+                )
+                self.info_label.configure(
+                    text=f"🔄 Verbinding verbroken!\n\nZoeken naar {preferred}...\n\nAuto-reconnect actief.\nSluit je Pico aan om te verbinden."
+                )
+            else:
+                self.status_text.configure(text="Niet verbonden", text_color="gray")
+                self.info_label.configure(text=MSG_INFO_DEFAULT)
+    
+    def _update_connection_status(self):
+        """
+        Periodieke update van connection status (elke seconde).
+        
+        Deze methode checkt de connection health en update de visuele indicators.
+        """
+        # Check connection health
+        is_healthy = self.serial_manager.check_connection_health()
+        
+        # Update visual status
+        if self.serial_manager.is_connected and is_healthy:
+            # Alles goed - groene dot
+            self.status_indicator.configure(text="🟢", text_color="green")
+            port = self.serial_manager.preferred_port or "Unknown"
+            self.status_text.configure(text=f"Verbonden met {port}", text_color="green")
+        elif self.serial_manager.reconnect_running and self.serial_manager.preferred_port:
+            # Auto-reconnect actief - oranje dot
+            self.status_indicator.configure(text="🟠", text_color="orange")
+            port = self.serial_manager.preferred_port
+            self.status_text.configure(text=f"Zoeken naar {port}...", text_color="orange")
+        else:
+            # Niet verbonden - grijze dot
+            self.status_indicator.configure(text="⚫", text_color="gray")
+            self.status_text.configure(text="Niet verbonden", text_color="gray")
+        
+        # Schedule volgende update
+        self.after(1000, self._update_connection_status)
     
     def _connect_to_port(self, port_name: str):
         """Maak verbinding met geselecteerde poort."""
@@ -836,10 +931,9 @@ class StreamDeckManager(ctk.CTk):
         # Wait for READY (timeout: 5 seconds)
         if self.serial_manager.wait_for_ready(timeout=5.0):
             # READY received!
-            self.serial_button.configure(
-                text="✅ Connected",
-                fg_color=COLOR_SUCCESS
-            )
+            self.status_indicator.configure(text="🟢", text_color="green")
+            self.status_text.configure(text=f"Verbonden met {port_name}", text_color="green")
+            
             self.info_label.configure(
                 text=f"✅ Device ready!\n\nStarting sync..."
             )
@@ -867,11 +961,7 @@ class StreamDeckManager(ctk.CTk):
             text=f"✅ Sync complete!\n\n{count} buttons configured\n{NUM_SLIDERS} sliders configured"
         )
     
-    def _show_quick_action_info(self, action: dict):
-        """Toon info over quick action."""
-        self.info_label.configure(
-            text=MSG_INFO_QUICK_ACTION.format(**action)
-        )
+    # _show_quick_action_info REMOVED - Quick Actions feature has been removed
     
     def _handle_export(self):
         """Export configuratie naar bestand."""
@@ -1075,3 +1165,186 @@ class StreamDeckManager(ctk.CTk):
         # Update de GUI om te synchroniseren met Pico
         # Gebruik after() om thread-safe te zijn
         self.after(0, lambda: self.switch_mode(mode))
+    
+    # ========================================================================
+    # CLEANUP & SYSTEM TRAY
+    # ========================================================================
+    
+    def _create_system_tray(self):
+        """
+        Maak system tray icon.
+        
+        Deze methode creëert een icon in het systeemvak zodat de app
+        op de achtergrond kan draaien zonder venster.
+        """
+        try:
+            import pystray
+            from PIL import Image, ImageDraw
+            
+            # Maak een simpel icon (zwarte cirkel met SD)
+            def create_icon_image():
+                width = 64
+                height = 64
+                image = Image.new('RGB', (width, height), 'black')
+                draw = ImageDraw.Draw(image)
+                
+                # Teken cirkel
+                draw.ellipse([8, 8, 56, 56], fill='#3B82F6', outline='white', width=2)
+                
+                # Teken tekst "SD"
+                draw.text((18, 22), "SD", fill='white')
+                
+                return image
+            
+            # Maak menu items
+            def on_show(icon, item):
+                """Toon het venster weer."""
+                # Toon window in main thread
+                self.after(0, self._show_from_tray)
+            
+            def on_quit(icon, item):
+                """Echt afsluiten."""
+                icon.stop()
+                self.after(0, self._real_quit)
+            
+            # Maak het menu
+            menu = pystray.Menu(
+                pystray.MenuItem("🖥️ Toon Venster", on_show, default=True),
+                pystray.MenuItem("❌ Afsluiten", on_quit)
+            )
+            
+            # Maak tray icon
+            self.tray_icon = pystray.Icon(
+                "stream_deck",
+                create_icon_image(),
+                "Stream Deck Manager",
+                menu
+            )
+            
+            self.system_tray_available = True
+            print("✅ System tray icon created")
+            
+        except ImportError:
+            print("⚠️ pystray not installed - minimize to tray disabled")
+            print("   Install with: pip install pystray pillow")
+            self.system_tray_available = False
+            self.tray_icon = None
+    
+    def _minimize_to_tray(self):
+        """
+        Minimaliseer de app naar system tray.
+        
+        Het venster wordt verborgen en een icon verschijnt in het systeemvak.
+        """
+        if not self.system_tray_available:
+            print("⚠️ System tray not available - closing app")
+            self._real_quit()
+            return
+        
+        # Check of tray al actief is
+        if self.system_tray_active:
+            print("📥 Already in system tray - just hiding window")
+            self.withdraw()
+            return
+        
+        print("📥 Minimizing to system tray...")
+        
+        # Verberg window
+        self.withdraw()
+        
+        # Start tray icon in background thread
+        self.system_tray_active = True
+        
+        import threading
+        tray_thread = threading.Thread(target=self._run_tray_icon, daemon=True)
+        tray_thread.start()
+        
+        print("✅ App minimized to system tray")
+    
+    def _run_tray_icon(self):
+        """
+        Run tray icon in background thread.
+        
+        Deze methode draait in een aparte thread en blijft actief
+        zolang de tray icon zichtbaar is.
+        """
+        try:
+            print("🎯 Tray icon thread started")
+            self.tray_icon.run()
+            print("🛑 Tray icon stopped")
+        except Exception as e:
+            print(f"❌ Tray icon error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.system_tray_active = False
+            print("📍 Tray icon thread ended")
+    
+    def _show_from_tray(self):
+        """
+        Toon het venster weer vanuit system tray.
+        
+        Deze methode wordt aangeroepen vanuit het tray menu
+        en toont het window weer zonder de tray icon te stoppen.
+        """
+        print("🖥️ Showing window from tray...")
+        
+        # Toon window weer
+        self.deiconify()
+        
+        # Breng window naar voren
+        self.lift()
+        self.focus_force()
+        
+        print("✅ Window restored")
+
+    
+    def _real_quit(self):
+        """
+        Echt afsluiten van de applicatie.
+        
+        Deze methode wordt aangeroepen vanuit het system tray menu
+        of wanneer system tray niet beschikbaar is.
+        """
+        print("\n🛑 Application closing...")
+        
+        try:
+            # Stop tray icon als die actief is
+            if self.system_tray_active and self.tray_icon:
+                print("   Stopping tray icon...")
+                try:
+                    self.tray_icon.stop()
+                except:
+                    pass
+                self.system_tray_active = False
+            
+            # Stop auto-reconnect eerst
+            if self.serial_manager.reconnect_running:
+                print("   Stopping auto-reconnect...")
+                self.serial_manager.stop_auto_reconnect()
+            
+            # Disconnect netjes
+            if self.serial_manager.is_connected:
+                print("   Disconnecting from device...")
+                self.serial_manager.disconnect()
+            
+            print("✅ Cleanup complete!")
+        
+        except Exception as e:
+            print(f"⚠️ Error during cleanup: {e}")
+        
+        finally:
+            # Sluit window
+            self.destroy()
+    
+    def _on_closing(self):
+        """
+        Handle window close event - minimaliseer naar tray.
+        
+        Deze methode zorgt ervoor dat de app naar de system tray gaat
+        in plaats van volledig af te sluiten. De seriële verbinding
+        blijft actief op de achtergrond.
+        """
+        # Normale sluiting -> naar tray
+        self._minimize_to_tray()
+

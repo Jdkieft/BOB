@@ -17,8 +17,37 @@ Configuratie structuur:
 """
 
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+
+def get_config_directory():
+    """
+    Bepaal de juiste directory voor config opslag.
+    
+    Deze functie zorgt ervoor dat config bestanden op de juiste plek komen:
+    - Bij .exe: In %APPDATA%/StreamDeckManager/
+    - Bij script: In de script directory
+    
+    Returns:
+        Path object naar de config directory
+    """
+    if getattr(sys, 'frozen', False):
+        # Running als .exe (PyInstaller)
+        # Gebruik AppData voor persistent storage
+        appdata = os.getenv('APPDATA')
+        config_dir = Path(appdata) / 'StreamDeckManager'
+    else:
+        # Running als Python script
+        # Gebruik script directory
+        config_dir = Path(__file__).parent
+    
+    # Maak directory als die niet bestaat
+    config_dir.mkdir(parents=True, exist_ok=True)
+    
+    return config_dir
 
 
 class ConfigManager:
@@ -37,7 +66,13 @@ class ConfigManager:
         Args:
             config_file: Naam van het configuratiebestand (standaard: streamdeck_config.json)
         """
-        self.config_file = Path(config_file)
+        # Bepaal de juiste locatie voor config
+        config_dir = get_config_directory()
+        self.config_file = config_dir / config_file
+        
+        print(f"📁 Config file location: {self.config_file}")
+        
+        self.config: Dict[str, Any] = self.load()
         self.config: Dict[str, Any] = self.load()
         
         # Zorg ervoor dat num_modes bestaat in config
@@ -231,3 +266,23 @@ class ConfigManager:
         except Exception as e:
             print(f"❌ Error importing: {e}")
             return False
+    
+    def get_preferred_port(self) -> str:
+        """
+        Haal de voorkeurs COM poort op.
+        
+        Returns:
+            COM poort naam (bijv. "COM3") of lege string als niet ingesteld
+        """
+        return self.config.get('preferred_port', '')
+    
+    def set_preferred_port(self, port: str) -> None:
+        """
+        Sla de voorkeurs COM poort op.
+        
+        Args:
+            port: COM poort naam (bijv. "COM3")
+        """
+        self.config['preferred_port'] = port
+        self.save()
+        print(f"✅ Preferred port set to {port}")
