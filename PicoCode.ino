@@ -21,16 +21,6 @@ int num_modes = 4;        // aantal actieve modes (standaard 4)
 int current_mode = 0;     // huidige mode
 bool in_sync = false;     // true tijdens sync_start - sync_end
 bool pico_ready = false;  // true als setup klaar is
-bool pc_connected = false;  // true als PC heeft geantwoord op READY
-
-// heartbeat/connection tracking
-unsigned long last_ready_sent = 0;
-const unsigned long READY_INTERVAL = 2000;  // stuur READY elke 2 seconden totdat connected
-
-// PC activity monitoring
-unsigned long last_pc_message = 0;
-const unsigned long PC_TIMEOUT = 10000;  // als 10s geen bericht van PC → disconnected
-bool monitoring_pc = false;  // start monitoring na eerste PC contact
 
 // slider state
 int last_slider_values[4] = { -1, -1, -1, -1 };  // vorige waarden voor 4 sliders
@@ -137,7 +127,6 @@ void registerActivity() {
 
 void handleSyncStart() {
   in_sync = true;
-  pc_connected = true;  // PC heeft contact gemaakt!
 
   // verwijder alle huidige data
   for (int m = 0; m < 10; m++) {
@@ -158,8 +147,7 @@ void handleSyncStart() {
   // update display
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.drawStr(0, 12, "PC Connected!");
-  u8g2.drawStr(0, 30, "Syncing...");
+  u8g2.drawStr(0, 12, "Syncing...");
   u8g2.sendBuffer();
 }
 
@@ -382,12 +370,6 @@ void parseCommand(String cmd) {
   cmd.trim();  // verwijder whitespace
 
   if (cmd.length() == 0) return;
-  
-  // Update PC activity timestamp (we ontvingen een bericht!)
-  last_pc_message = millis();
-  if (pc_connected) {
-    monitoring_pc = true;  // start monitoring na eerste verbinding
-  }
 
   // split op ":" delimiter
   int firstColon = cmd.indexOf(':');
@@ -397,7 +379,6 @@ void parseCommand(String cmd) {
     String command = cmd;
 
     if (command == "PING") {
-      pc_connected = true;  // PC is actief!
       sendMessage("Pong");
     } else if (command == "RESET") {
       handleReset();
@@ -501,70 +482,19 @@ void setup() {
 
   // stuur ready naar pc
   pico_ready = true;
-  pc_connected = false;  // nog niet connected
-  monitoring_pc = false;  // nog niet starten met monitoring
-  last_ready_sent = millis();
-  last_pc_message = millis();  // initialiseer
   sendMessage("READY:1.0.0");
   last_activity = millis();
-  Serial.println("Pico ready - waiting for PC connection...");
+  Serial.println("Pico ready - waiting for sync...");
 
   // display startup complete
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
   u8g2.drawStr(0, 12, "BOB klaar");
-  u8g2.drawStr(0, 30, "Zoeken naar PC...");
+  u8g2.drawStr(0, 30, "Wachten op PC");
   u8g2.sendBuffer();
 }
 
 void loop() {
-  // PC DISCONNECT DETECTIE
-  // Als we connected zijn EN monitoring actief is EN te lang geen bericht
-  if (pc_connected && monitoring_pc) {
-    unsigned long now = millis();
-    if (now - last_pc_message > PC_TIMEOUT) {
-      // PC heeft al te lang niet gereageerd → disconnected!
-      Serial.println("PC timeout - disconnected");
-      pc_connected = false;
-      monitoring_pc = false;
-      
-      // Update display
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_ncenB08_tr);
-      u8g2.drawStr(0, 12, "PC Disconnected!");
-      u8g2.drawStr(0, 30, "Waiting for PC...");
-      u8g2.sendBuffer();
-      
-      delay(2000);  // toon bericht 2 seconden
-    }
-  }
-
-  // HEARTBEAT: stuur READY totdat PC connected is
-  if (pico_ready && !pc_connected) {
-    unsigned long now = millis();
-    if (now - last_ready_sent >= READY_INTERVAL) {
-      sendMessage("READY:1.0.0");
-      last_ready_sent = now;
-      
-      // update display met zoekende status
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_ncenB08_tr);
-      u8g2.drawStr(0, 12, "BOB klaar");
-      u8g2.drawStr(0, 30, "Zoeken naar PC...");
-      
-      // toon dots voor animatie
-      int dots = (now / 500) % 4;  // 0-3 dots
-      char dotStr[5] = "";
-      for (int i = 0; i < dots; i++) {
-        dotStr[i] = '.';
-      }
-      dotStr[dots] = '\0';
-      u8g2.drawStr(0, 48, dotStr);
-      
-      u8g2.sendBuffer();
-    }
-  }
-
   // serial commands ontvangen
   while (Serial.available() > 0) {
     char c = Serial.read();
