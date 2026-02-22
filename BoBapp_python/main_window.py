@@ -27,9 +27,9 @@ from spotify_manager import SpotifyManager
 
 # Import GUI components
 from button_widget import ButtonWidget
-from slider_widget import SliderWidget
+from slider_widget import SliderWidget, AppPool  # AppPool nodig voor drag-and-drop
 from dialogs import ButtonConfigDialog
-from dialogs_connection import ConnectionDialog
+from dialogs_settings import SettingsDialog
 
 # Import constants
 from constants import (
@@ -69,7 +69,11 @@ class StreamDeckManager(ctk.CTk):
         # Window setup
         self.title("Stream Deck Manager")
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
-        
+
+        # Direct verbergen als --minimized meegegeven is
+        if "--minimized" in sys.argv:
+            self.withdraw()
+
         # Bind window close event voor cleanup
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         
@@ -126,58 +130,47 @@ class StreamDeckManager(ctk.CTk):
         self._create_main_container()
     
     def _create_header(self):
-        """Maak header met titel en connectie status."""
+        """Compacte header: verbindingsstatus + instellingen knop."""
         header = ctk.CTkFrame(
             self,
-            height=HEADER_HEIGHT,
-            fg_color=("gray92", "gray17")  # Subtiele gradient-achtige kleur
+            height=56,
+            fg_color=("gray88", "gray18"),
+            corner_radius=0
         )
-        header.pack(fill="x", padx=10, pady=10)
-        
-        # Titel met subtiel gradient effect
-        title_frame = ctk.CTkFrame(header, fg_color="transparent")
-        title_frame.pack(side="left", padx=20)
-        
-        ctk.CTkLabel(
-            title_frame,
-            text="Stream Deck + Audio Sliders",
-            font=FONT_TITLE,
-            text_color=("#2563EB", "#60A5FA")  # Gradient-achtig blauw
-        ).pack()
-        
-        # Connection status container
-        status_container = ctk.CTkFrame(header, fg_color="transparent")
-        status_container.pack(side="right", padx=20)
-        
-        # Status indicator (animated dot)
+        header.pack(fill="x", padx=0, pady=0)
+        header.pack_propagate(False)
+
+        # Rechts: status + instellingen knop
+        right = ctk.CTkFrame(header, fg_color="transparent")
+        right.pack(side="right", fill="y", padx=(0, 12))
+
+        ctk.CTkButton(
+            right,
+            text="⚙️",
+            command=self._open_settings,
+            width=36, height=36,
+            font=("Roboto", 16),
+            fg_color=("gray75", "gray30"),
+            hover_color=("gray60", "gray40"),
+            corner_radius=8
+        ).pack(side="right", pady=10, padx=(8, 0))
+
         self.status_indicator = ctk.CTkLabel(
-            status_container,
+            right,
             text="⚫",
-            font=("Roboto", 20),
+            font=("Roboto", 14),
             text_color="gray"
         )
-        self.status_indicator.pack(side="left", padx=(0, 10))
-        
-        # Status text
+        self.status_indicator.pack(side="right", pady=10, padx=(0, 4))
+
         self.status_text = ctk.CTkLabel(
-            status_container,
+            right,
             text="Niet verbonden",
-            font=("Roboto", 13),
+            font=("Roboto", 12),
             text_color="gray"
         )
-        self.status_text.pack(side="left", padx=(0, 15))
-        
-        # Connect button
-        self.serial_button = ctk.CTkButton(
-            status_container,
-            text="⚙️ Configureer",
-            command=self._handle_connect_click,
-            width=140,
-            height=40,
-            font=("Roboto", 12, "bold")
-        )
-        self.serial_button.pack(side="left")
-        
+        self.status_text.pack(side="right", pady=10)
+
         # Start status update loop
         self._update_connection_status()
     
@@ -191,42 +184,37 @@ class StreamDeckManager(ctk.CTk):
         self._create_slider_panel(main_container)
     
     def _create_button_panel(self, parent):
-        """Maak linker panel met button grid, info en export/import."""
+        """Maak linker panel met mode selector, button grid en info."""
         left_panel = ctk.CTkFrame(parent)
         left_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
-        
+
         # Mode selector
         self._create_mode_selector(left_panel)
-        
-        # Button grid (met expand voor betere scaling)
+
+        # Button grid
         self._create_button_grid(left_panel)
-        
+
         # Info panel onderaan
         self._create_info_panel(left_panel)
-        
-        # Export/Import buttons onderaan
-        self._create_export_import_buttons(left_panel)
     
     def _create_mode_selector(self, parent):
-        """Maak mode selector buttons."""
+        """Maak mode selector met scrollbare tabs en add/remove knoppen."""
         mode_frame = ctk.CTkFrame(
-            parent, 
+            parent,
             height=100,
-            fg_color=("gray88", "gray18")  # Subtiele gradient kleur
+            fg_color=("gray88", "gray18")
         )
         mode_frame.pack(fill="x", padx=10, pady=10)
-        
-        # Header met title en add/remove buttons
+
         header_frame = ctk.CTkFrame(mode_frame, fg_color="transparent")
         header_frame.pack(pady=(10, 5), fill="x", padx=10)
-        
+
         ctk.CTkLabel(
             header_frame,
             text="Mode Selector",
             font=("Roboto", 18, "bold")
         ).pack(side="left")
-        
-        # Mode counter
+
         self.mode_counter_label = ctk.CTkLabel(
             header_frame,
             text=f"({self.num_modes}/{MAX_MODES_LIMIT})",
@@ -234,34 +222,29 @@ class StreamDeckManager(ctk.CTk):
             text_color="gray"
         )
         self.mode_counter_label.pack(side="left", padx=10)
-        
-        # Add mode button
+
         self.add_mode_btn = ctk.CTkButton(
             header_frame,
             text="➕ Add Mode",
             command=self._add_mode,
-            width=100,
-            height=30,
+            width=100, height=30,
             font=("Roboto", 11, "bold"),
             fg_color="green",
             hover_color="darkgreen"
         )
         self.add_mode_btn.pack(side="right", padx=5)
-        
-        # Remove mode button
+
         self.remove_mode_btn = ctk.CTkButton(
             header_frame,
             text="➖ Remove Current",
             command=self._remove_mode,
-            width=120,
-            height=30,
+            width=120, height=30,
             font=("Roboto", 11, "bold"),
             fg_color="red",
             hover_color="darkred"
         )
         self.remove_mode_btn.pack(side="right", padx=5)
-        
-        # Scrollable frame voor mode buttons
+
         self.mode_buttons_container = ctk.CTkScrollableFrame(
             mode_frame,
             height=60,
@@ -269,10 +252,9 @@ class StreamDeckManager(ctk.CTk):
             fg_color="transparent"
         )
         self.mode_buttons_container.pack(pady=10, fill="x", padx=10)
-        
-        # Maak initial mode buttons
+
         self._rebuild_mode_buttons()
-    
+
     def _create_button_grid(self, parent):
         """Maak 3x3 button grid met betere scaling."""
         grid_frame = ctk.CTkFrame(
@@ -289,14 +271,20 @@ class StreamDeckManager(ctk.CTk):
         )
         self.grid_title.pack(pady=15)
         
-        # Button container (centraal gepositioneerd, schaalt niet extreem ver uit)
-        button_container = ctk.CTkFrame(grid_frame, fg_color="transparent")
-        button_container.pack(expand=True, pady=10)
-        
-        # Inner grid frame voor de buttons zelf
-        self.button_grid_frame = ctk.CTkFrame(button_container, fg_color="transparent")
+        # Button grid — gecentreerd, max 200px per knop
+        MAX_BTN = 200
+        GRID_MAX = MAX_BTN * 3 + 8 * 6  # 3 knoppen + padx aan beide kanten
+
+        outer_center = ctk.CTkFrame(grid_frame, fg_color="transparent")
+        outer_center.pack(expand=True)
+
+        self.button_grid_frame = ctk.CTkFrame(outer_center, fg_color="transparent")
         self.button_grid_frame.pack()
-        
+
+        for i in range(3):
+            self.button_grid_frame.rowconfigure(i, minsize=160, weight=0)
+            self.button_grid_frame.columnconfigure(i, minsize=160, weight=0)
+
         # Maak 9 buttons (3x3)
         for row in range(3):
             for col in range(3):
@@ -311,76 +299,101 @@ class StreamDeckManager(ctk.CTk):
                 self.button_widgets.append(button)
     
     def _create_slider_panel(self, parent):
-        """Maak rechter panel met audio sliders - nu veel breder en beter schalend."""
-        # Maak een scrollable frame zodat het altijd past, zelfs op kleine schermen
-        slider_panel = ctk.CTkScrollableFrame(
-            parent, 
-            width=500,
-            fg_color=("gray90", "gray16")  # Subtiele gradient achtergrond
-        )
-        slider_panel.pack(side="right", fill="both", expand=True)
+        """Maak rechter panel met audio sliders en drag-and-drop AppPool.
         
-        # Header met gradient-achtige styling
-        header_frame = ctk.CTkFrame(
-            slider_panel,
-            fg_color="transparent"
-        )
-        header_frame.pack(pady=15, padx=15, fill="x")
-        
+        Gebruikt grid zodat alles meegroeit met de venstergrootte:
+        - Rij 0: header  (vast)
+        - Rij 1: AppPool (vast)
+        - Rij 2-4: app sliders (weight=1 elk, groeien mee)
+        - Rij 5: master volume (vast)
+        """
+        outer = ctk.CTkFrame(parent, fg_color=("gray90", "gray16"))
+        outer.pack(side="right", fill="both", expand=True)
+
+        # Grid: kolom 0 vult alles
+        outer.columnconfigure(0, weight=1)
+        # Rijen voor de 3 app-sliders krijgen gelijk gewicht
+        outer.rowconfigure(2, weight=1)
+        outer.rowconfigure(3, weight=1)
+        outer.rowconfigure(4, weight=1)
+
+        # ── Rij 0: Header ──────────────────────────────────────────────
+        header = ctk.CTkFrame(outer, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=15, pady=(12, 2))
+
         ctk.CTkLabel(
-            header_frame,
+            header,
             text="Audio Sliders",
             font=FONT_HEADER,
-            text_color=("#2563EB", "#3B82F6")  # Gradient blauw
-        ).pack()
-        
+            text_color=("#2563EB", "#3B82F6")
+        ).pack(side="left")
+
         ctk.CTkLabel(
-            slider_panel,
-            text="Koppel apps aan fysieke sliders\nvoor volume control\n(Right-click op naam om te hernoemen)",
+            header,
+            text="sleep apps naar een slider  •  rechtsclick om te hernoemen",
             font=("Roboto", 10),
-            text_color="gray",
-            justify="center"
-        ).pack(pady=(0, 10))
-        
-        # Haal beschikbare apps op
+            text_color="gray"
+        ).pack(side="right")
+
+        # ── Rij 1: AppPool ─────────────────────────────────────────────
         available_apps = self.audio_manager.get_audio_applications()
-        
-        # Maak sliders (0-2 voor apps, 3 voor master volume)
+        self.app_pool = AppPool(outer, available_apps)
+        self.app_pool.frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 4))
+
+        # ── Rijen 2-4: App-sliders (schaalbaar) ────────────────────────
+        app_mappings = self.config_manager.get_all_app_name_mappings()
+
+        grid_row = 2
         for i in range(NUM_SLIDERS):
-            # Haal opgeslagen naam op
             slider_name = self.config_manager.get_slider_name(i)
-            
-            # Slider 3 is master volume (geen apps)
+
             if i == 3:
+                # Master volume: vaste rij 5, groeit niet mee
                 slider = SliderWidget(
-                    slider_panel,
-                    i,
-                    [],  # Geen apps voor master volume
+                    outer, i, [],
                     on_app_change=self._handle_slider_change,
-                    is_master_volume=True,  # Special flag
+                    is_master_volume=True,
                     slider_name=slider_name
                 )
+                slider.frame.grid(row=5, column=0, sticky="ew", padx=15, pady=(4, 8))
             else:
                 slider = SliderWidget(
-                    slider_panel,
-                    i,
-                    available_apps,
+                    outer, i, available_apps,
                     on_app_change=self._handle_slider_change,
                     slider_name=slider_name
                 )
-            
-            # Stel rename callback in
+                slider.frame.grid(row=grid_row, column=0, sticky="nsew", padx=15, pady=4)
+                grid_row += 1
+
             slider.set_rename_callback(self._handle_slider_rename)
-            
-            # Stel app rename callback in
             slider.set_app_rename_callback(self._handle_app_rename)
-            
-            # Laad app naam mappings
-            app_mappings = self.config_manager.get_all_app_name_mappings()
             slider.set_app_name_mappings(app_mappings)
-            
+            slider.set_pool(self.app_pool)
             self.slider_widgets.append(slider)
+
+        # Koppel sliders aan pool
+        self.app_pool.set_sliders(
+            [sw for sw in self.slider_widgets if not sw.is_master_volume]
+        )
+
+        # Start periodieke refresh van beschikbare apps (elke 10 seconden)
+        self._schedule_app_pool_refresh()
     
+    def _schedule_app_pool_refresh(self):
+        """Ververs de app pool elke 10 seconden met recent actieve audio-apps."""
+        try:
+            fresh_apps = self.audio_manager.get_audio_applications()
+            if hasattr(self, 'app_pool'):
+                self.app_pool.update_available_apps(fresh_apps)
+                # Update ook de available_apps lijst in elke slider widget
+                for sw in self.slider_widgets:
+                    sw.update_available_apps(fresh_apps)
+        except Exception as e:
+            print(f"⚠️ App pool refresh error: {e}")
+        finally:
+            # Plan de volgende refresh over 10 seconden
+            self.after(10000, self._schedule_app_pool_refresh)
+
     # _create_right_panel REMOVED - Quick Actions feature has been removed
     # Info panel and export/import buttons are now in the left column
     
@@ -436,15 +449,13 @@ class StreamDeckManager(ctk.CTk):
     
     def _rebuild_mode_buttons(self):
         """Herbouw alle mode buttons op basis van num_modes."""
-        # Verwijder oude buttons
         for btn in self.mode_buttons:
             btn.destroy()
         self.mode_buttons.clear()
-        
-        # Maak nieuwe buttons
+
         for i in range(self.num_modes):
             mode_name = self.config_manager.get_mode_name(i)
-            
+
             btn = ctk.CTkButton(
                 self.mode_buttons_container,
                 text=mode_name,
@@ -454,16 +465,10 @@ class StreamDeckManager(ctk.CTk):
                 font=("Roboto", 14, "bold")
             )
             btn.pack(side="left", padx=5)
-            
-            # Right-click to rename
             btn.bind("<Button-3>", lambda e, m=i: self._rename_mode_dialog(m))
-            
             self.mode_buttons.append(btn)
-        
-        # Update active button
+
         self._update_mode_button_colors()
-        
-        # Update add/remove button states
         self._update_mode_button_states()
     
     def _update_mode_button_states(self):
@@ -916,14 +921,15 @@ class StreamDeckManager(ctk.CTk):
         
         print(f"✅ App '{original_name}' renamed to '{display_name}'")
     
-    def _handle_connect_click(self):
-        """Handle connect button click - open connection dialog."""
-        # Open de nieuwe connection dialog
-        ConnectionDialog(
+    def _open_settings(self):
+        """Open de algemene instellingen dialog."""
+        SettingsDialog(
             self,
             self.serial_manager,
             self.config_manager,
-            on_port_selected=self._on_port_selected
+            on_port_selected=self._on_port_selected,
+            on_export=self._handle_export,
+            on_import=self._handle_import,
         )
     
     def _on_port_selected(self, port_name: str):
@@ -1323,61 +1329,53 @@ class StreamDeckManager(ctk.CTk):
     
     def _create_system_tray(self):
         """
-        Maak system tray icon.
-        
-        Deze methode creëert een icon in het systeemvak zodat de app
-        op de achtergrond kan draaien zonder venster.
+        Maak system tray icon met het echte BOBicon.ico.
         """
         try:
             import pystray
-            from PIL import Image, ImageDraw
-            
-            # Maak een simpel icon (zwarte cirkel met SD)
-            def create_icon_image():
-                width = 64
-                height = 64
-                image = Image.new('RGB', (width, height), 'black')
-                draw = ImageDraw.Draw(image)
-                
-                # Teken cirkel
-                draw.ellipse([8, 8, 56, 56], fill='#3B82F6', outline='white', width=2)
-                
-                # Teken tekst "SD"
+            from PIL import Image
+
+            # Bepaal pad naar BOBicon.ico
+            if getattr(sys, 'frozen', False):
+                icon_path = Path(sys.executable).parent / "BOBicon.ico"
+            else:
+                icon_path = Path(__file__).parent / "BOBicon.ico"
+
+            # Laad het echte icoon, of gebruik fallback
+            if icon_path.exists():
+                img = Image.open(str(icon_path))
+                img = img.convert("RGBA").resize((64, 64))
+            else:
+                from PIL import ImageDraw
+                img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+                draw.ellipse([4, 4, 60, 60], fill='#3B82F6')
                 draw.text((18, 22), "SD", fill='white')
-                
-                return image
-            
-            # Maak menu items
+
             def on_show(icon, item):
-                """Toon het venster weer."""
-                # Toon window in main thread
                 self.after(0, self._show_from_tray)
-            
+
             def on_quit(icon, item):
-                """Echt afsluiten."""
                 icon.stop()
                 self.after(0, self._real_quit)
-            
-            # Maak het menu
+
             menu = pystray.Menu(
                 pystray.MenuItem("🖥️ Toon Venster", on_show, default=True),
                 pystray.MenuItem("❌ Afsluiten", on_quit)
             )
-            
-            # Maak tray icon
+
             self.tray_icon = pystray.Icon(
                 "stream_deck",
-                create_icon_image(),
+                img,
                 "Stream Deck Manager",
                 menu
             )
-            
+
             self.system_tray_available = True
             print("✅ System tray icon created")
-            
+
         except ImportError:
             print("⚠️ pystray not installed - minimize to tray disabled")
-            print("   Install with: pip install pystray pillow")
             self.system_tray_available = False
             self.tray_icon = None
     

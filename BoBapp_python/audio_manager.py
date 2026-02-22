@@ -9,7 +9,8 @@ Dependencies:
     - comtypes (automatisch geïnstalleerd met pycaw)
 """
 
-from typing import List
+from typing import List, Dict
+import time
 
 
 class AudioManager:
@@ -20,55 +21,51 @@ class AudioManager:
     welke applicaties momenteel audio afspelen of kunnen afspelen.
     """
     
+    # Cache: {app_name: last_seen_timestamp}
+    _recent_apps: Dict[str, float] = {}
+    RECENT_WINDOW = 120  # seconden — apps zichtbaar gedurende 2 minuten
+
     @staticmethod
     def get_audio_applications() -> List[str]:
         """
-        Detecteer alle lopende applicaties met audio sessies.
-        
-        Deze methode:
-        1. Haalt alle audio sessies op van Windows
-        2. Filtert unieke applicatie namen
-        3. Returnt een gesorteerde lijst
-        
+        Detecteer audio-applicaties en onthoud recent actieve apps.
+
+        Retourneert de combinatie van:
+        - Apps die NU een actieve audio-sessie hebben
+        - Apps die in de afgelopen 2 minuten een sessie hadden
+
         Returns:
-            List van applicatie namen (bijv. ["Discord.exe", "Spotify.exe"])
-            Of dummy data als pycaw niet beschikbaar is
-        
-        Note:
-            Als pycaw niet geïnstalleerd is, wordt dummy data geretourneerd
-            voor development doeleinden.
+            Gesorteerde lijst van app-namen
         """
+        now = time.time()
+
         try:
-            # Probeer pycaw te importeren
             from pycaw.pycaw import AudioUtilities
-            
-            # Haal alle audio sessies op
+
             sessions = AudioUtilities.GetAllSessions()
-            apps = []
-            
-            # Loop door alle sessies
+
             for session in sessions:
-                # Check of de sessie een proces heeft
                 if session.Process and session.Process.name():
                     app_name = session.Process.name()
-                    
-                    # Voeg alleen toe als nog niet in de lijst
-                    if app_name not in apps:
-                        apps.append(app_name)
-            
-            # Sorteer alfabetisch voor betere UX
-            apps.sort()
-            return apps
-            
+                    AudioManager._recent_apps[app_name] = now
+
         except ImportError:
-            # pycaw niet geïnstalleerd - return dummy data
             print("⚠️ pycaw not installed, using dummy data")
-            return AudioManager._get_dummy_apps()
-        
+            # Vul cache éénmalig met dummy data
+            if not AudioManager._recent_apps:
+                for app in AudioManager._get_dummy_apps():
+                    AudioManager._recent_apps[app] = now
         except Exception as e:
-            # Andere fout - log en return dummy data
             print(f"❌ Audio detection error: {e}")
-            return AudioManager._get_dummy_apps()
+
+        # Verwijder apps ouder dan RECENT_WINDOW
+        cutoff = now - AudioManager.RECENT_WINDOW
+        AudioManager._recent_apps = {
+            app: ts for app, ts in AudioManager._recent_apps.items()
+            if ts >= cutoff
+        }
+
+        return sorted(AudioManager._recent_apps.keys())
     
     @staticmethod
     def _get_dummy_apps() -> List[str]:
