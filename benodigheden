@@ -1,0 +1,38 @@
+Benodigheden:
+
+- Raspberry pi pico met headers
+    versie maakt niet uit, (2, W, 2W)
+
+- 1,3 inch 64x128 oled SH1106 I2C
+    met vier pinnen
+
+- ADS1115 adc module
+
+- 3x slidepotentiometer B103 10K ohm
+
+- 1x potentiometer B10k
+
+- 1x rotary encoder 5pin 15mm 
+    Geen D shaft
+
+- 2x dopjes voor de potmeter en rotary encoder
+    kan 3d printed
+
+- 11x Cherry MX style switches 
+    Mag elke kopie en kleur mogelijk zijn, ze moeten wel full sized zijn
+
+- 11x keycap
+    elke kleur die je wilt
+
+
+6 x3
+2,50 x3
+1,50 x 1
+3,19 x2
+1,49 x2
+10 x1 
+7,5x 3 
+
+
+
+    
