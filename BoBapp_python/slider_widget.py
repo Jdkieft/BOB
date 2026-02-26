@@ -388,6 +388,41 @@ class SliderWidget:
     def set_app_rename_callback(self, callback: Callable[[str, str], None]):
         self.on_app_rename_callback = callback
 
+    def update_active_apps(self, active_apps: List[str]):
+        """
+        Verberg app-tags die niet in active_apps zitten (inactief > 5 min),
+        en toon tags die weer actief zijn.
+
+        Args:
+            active_apps: Lijst van apps die momenteel recent actief zijn
+        """
+        if self.is_master_volume or self.apps_container is None:
+            return
+
+        active_set = set(active_apps)
+
+        for widget in self.apps_container.winfo_children():
+            if not isinstance(widget, ctk.CTkFrame):
+                continue
+            app_name = getattr(widget, '_app_name', None)
+            if app_name is None:
+                continue
+
+            if app_name in active_set:
+                widget.pack(fill="x", pady=3, padx=6)
+            else:
+                widget.pack_forget()
+
+        # Lege-state tonen als alle tags verborgen zijn
+        visible = any(
+            isinstance(w, ctk.CTkFrame) and w.winfo_ismapped()
+            for w in self.apps_container.winfo_children()
+        )
+        if not visible:
+            self._show_empty_state()
+        else:
+            self._hide_empty_state()
+
     def set_app_name_mappings(self, mappings: dict):
         self.app_name_mapping = mappings.copy()
         # Update bestaande tags

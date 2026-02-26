@@ -36,7 +36,7 @@ from constants import (
     WINDOW_WIDTH, WINDOW_HEIGHT, HEADER_HEIGHT,
     DEFAULT_MODES, MAX_MODES_LIMIT, MIN_MODES, BUTTONS_PER_MODE, NUM_SLIDERS,
     FONT_TITLE, FONT_HEADER,
-    MSG_NO_DEVICES, MSG_INFO_DEFAULT,
+    MSG_NO_DEVICES,
     COLOR_BACKGROUND_LIGHT, COLOR_BACKGROUND_DARK,
     COLOR_SUCCESS, COLOR_ERROR
 )
@@ -70,6 +70,13 @@ class StreamDeckManager(ctk.CTk):
         self.title("Stream Deck Manager")
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
 
+        # Titlebar icoon
+        try:
+            icon_path = Path(sys.executable).parent / "BOBicon.ico" if getattr(sys, 'frozen', False) else Path(__file__).parent / "BOBicon.ico"
+            self.iconbitmap(str(icon_path))
+        except Exception:
+            pass
+
         # Direct verbergen als --minimized meegegeven is
         if "--minimized" in sys.argv:
             self.withdraw()
@@ -100,6 +107,7 @@ class StreamDeckManager(ctk.CTk):
         self.current_mode = 0
         self.num_modes = self.config_manager.get_num_modes()
         self.slider_apps = [[], [], [], []]  # 3 voor apps + 1 voor master volume
+        self._slider_active_cache = {}  # {app_name: last_seen_timestamp} voor 5-min fade
         
         # UI Components (worden later gevuld)
         self.button_widgets: List[ButtonWidget] = []
@@ -111,6 +119,9 @@ class StreamDeckManager(ctk.CTk):
         self.system_tray_active = False
         self.tray_icon = None
         
+        # Hidden stub label — vervangt info panel, voorkomt crashes op configure() aanroepen
+        self.info_label = ctk.CTkLabel(self, text="")
+
         # Maak UI
         self._create_layout()
         
@@ -195,7 +206,6 @@ class StreamDeckManager(ctk.CTk):
         self._create_button_grid(left_panel)
 
         # Info panel onderaan
-        self._create_info_panel(left_panel)
     
     def _create_mode_selector(self, parent):
         """Maak mode selector met scrollbare tabs en add/remove knoppen."""
@@ -263,13 +273,7 @@ class StreamDeckManager(ctk.CTk):
         )
         grid_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Grid title
-        self.grid_title = ctk.CTkLabel(
-            grid_frame,
-            text=f"Button Grid - Mode {self.current_mode + 1}",
-            font=FONT_HEADER
-        )
-        self.grid_title.pack(pady=15)
+
         
         # Button grid — gecentreerd, max 200px per knop
         MAX_BTN = 200
@@ -385,42 +389,39 @@ class StreamDeckManager(ctk.CTk):
             fresh_apps = self.audio_manager.get_audio_applications()
             if hasattr(self, 'app_pool'):
                 self.app_pool.update_available_apps(fresh_apps)
-                # Update ook de available_apps lijst in elke slider widget
                 for sw in self.slider_widgets:
                     sw.update_available_apps(fresh_apps)
+
+            # Vervaag slider-apps die meer dan 5 minuten niet actief zijn.
+            # fresh_apps bevat apps gezien in de afgelopen 2 minuten (RECENT_WINDOW).
+            # Voor de sliders bewaren we een eigen 5-minuten cache.
+            import time
+            now = time.time()
+            for app in fresh_apps:
+                self._slider_active_cache[app] = now
+
+            cutoff = now - 300  # 5 minuten
+            self._slider_active_cache = {
+                app: ts for app, ts in self._slider_active_cache.items()
+                if ts >= cutoff
+            }
+
+            active_5min = list(self._slider_active_cache.keys())
+            for sw in self.slider_widgets:
+                if not sw.is_master_volume:
+                    sw.update_active_apps(active_5min)
+
         except Exception as e:
             print(f"⚠️ App pool refresh error: {e}")
         finally:
-            # Plan de volgende refresh over 10 seconden
             self.after(10000, self._schedule_app_pool_refresh)
 
     # _create_right_panel REMOVED - Quick Actions feature has been removed
     # Info panel and export/import buttons are now in the left column
     
     def _create_info_panel(self, parent):
-        """Maak info panel (nu in linker kolom, compacter)."""
-        info_frame = ctk.CTkFrame(
-            parent,
-            fg_color=("gray85", "gray22"),  # Subtiele gradient kleur
-            border_width=1,
-            border_color=("gray70", "gray35")
-        )
-        info_frame.pack(fill="x", padx=10, pady=(5, 5))
-        
-        ctk.CTkLabel(
-            info_frame,
-            text="ℹ️ Info",
-            font=("Roboto", 14, "bold")
-        ).pack(pady=(10, 5))
-        
-        self.info_label = ctk.CTkLabel(
-            info_frame,
-            text=MSG_INFO_DEFAULT,
-            font=("Roboto", 11),
-            wraplength=600,
-            justify="center"
-        )
-        self.info_label.pack(pady=(5, 10), padx=10)
+        """Info panel removed — stub kept so info_label.configure() calls don't crash."""
+        self.info_label = ctk.CTkLabel(self, text="")
     
     def _create_export_import_buttons(self, parent):
         """Maak export/import buttons (nu in linker kolom)."""
@@ -708,8 +709,6 @@ class StreamDeckManager(ctk.CTk):
                     self.serial_manager.send_mode_name(mode, new_name)
                 
                 # Update grid title if this is current mode
-                if mode == self.current_mode:
-                    self.grid_title.configure(text=f"Button Grid - {new_name}")
                 
                 self.info_label.configure(
                     text=f"✅ Mode hernoemd!\n\n'{current_name}' → '{new_name}'"
@@ -788,6 +787,17 @@ class StreamDeckManager(ctk.CTk):
                 self.slider_apps[i] = []
             
             self.slider_widgets[i].set_assigned_apps(self.slider_apps[i])
+
+        # Vul de cache meteen met huidige actieve apps en pas de slider-zichtbaarheid
+        # direct toe — zodat inactieve apps al bij opstarten verborgen zijn
+        import time
+        now = time.time()
+        current_apps = self.audio_manager.get_audio_applications()
+        for app in current_apps:
+            self._slider_active_cache[app] = now
+        for sw in self.slider_widgets:
+            if not sw.is_master_volume:
+                sw.update_active_apps(current_apps)
         
         # Check voor preferred port en start auto-reconnect
         preferred_port = self.config_manager.get_preferred_port()
@@ -978,7 +988,7 @@ class StreamDeckManager(ctk.CTk):
                 )
             else:
                 self.status_text.configure(text="Niet verbonden", text_color="gray")
-                self.info_label.configure(text=MSG_INFO_DEFAULT)
+                pass
     
     def _update_connection_status(self):
         """
@@ -1131,10 +1141,6 @@ class StreamDeckManager(ctk.CTk):
         
         # Update mode buttons
         self._update_mode_button_colors()
-        
-        # Update grid title
-        mode_name = self.config_manager.get_mode_name(mode)
-        self.grid_title.configure(text=f"Button Grid - {mode_name}")
         
         # Reload button states
         self._load_button_states()

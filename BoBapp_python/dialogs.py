@@ -49,9 +49,10 @@ class WizardButtonConfigDialog:
     
     # Media control presets
     MEDIA_CONTROLS = [
-        {"name": "Play/Pause", "hotkey": "playpause", "icon": "⏯️"},
-        {"name": "Next Track", "hotkey": "nexttrack", "icon": "⏭️"},
-        {"name": "Previous Track", "hotkey": "previoustrack", "icon": "⏮️"},
+        {"name": "Play/Pause", "hotkey": "playpause", "icon": "⏯️", "category": "Afspelen"},
+        {"name": "Next Track", "hotkey": "nexttrack", "icon": "⏭️", "category": "Afspelen"},
+        {"name": "Previous Track", "hotkey": "previoustrack", "icon": "⏮️", "category": "Afspelen"},
+        {"name": "Mute / Unmute", "hotkey": "volumemute", "icon": "🔇", "category": "Volume"},
     ]
     
     # Uitgebreide emoji lijst - gecategoriseerd (8 categorieën, 12-16 emojis elk)
@@ -183,8 +184,8 @@ class WizardButtonConfigDialog:
         """Maak de navigatie buttons."""
         nav_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         nav_frame.pack(fill="x")
-        
-        # Back button (links)
+
+        # Terug-knop (stap 2+) en Leegmaken-knop (stap 1) delen dezelfde plek links
         self.back_button = ctk.CTkButton(
             nav_frame,
             text="⬅️ Back",
@@ -196,9 +197,25 @@ class WizardButtonConfigDialog:
             hover_color="gray30"
         )
         self.back_button.pack(side="left")
-        self.back_button.configure(state="disabled")  # Disabled op step 1
-        
-        # Cancel button (midden)
+
+        # Leegmaken-knop — alleen aanmaken als knop al geconfigureerd is
+        if self.current_config:
+            self.clear_button = ctk.CTkButton(
+                nav_frame,
+                text="🗑️ Leegmaken",
+                command=self._confirm_clear,
+                height=55,
+                width=150,
+                font=("Roboto", 14, "bold"),
+                fg_color=("gray60", "gray35"),
+                hover_color=("gray45", "gray25"),
+                text_color=("white", "white")
+            )
+            # Wordt zichtbaar/verborgen via _update_progress_ui
+        else:
+            self.clear_button = None
+
+        # Cancel button
         cancel_button = ctk.CTkButton(
             nav_frame,
             text="❌ Cancel",
@@ -210,7 +227,7 @@ class WizardButtonConfigDialog:
             hover_color="darkred"
         )
         cancel_button.pack(side="left", padx=10)
-        
+
         # Next/Finish button (rechts)
         self.next_button = ctk.CTkButton(
             nav_frame,
@@ -221,14 +238,14 @@ class WizardButtonConfigDialog:
             fg_color="green",
             hover_color="darkgreen"
         )
-        self.next_button.pack(side="right", fill="x", expand=True)
+        self.next_button.pack(side="right", fill="x", expand=True, padx=(10, 0))
     
     def _update_progress_ui(self):
         """Update de progress indicator."""
         # Update title
         titles = [
-            f"Step 1 of {self.total_steps}: Choose Icon & Label",
-            f"Step 2 of {self.total_steps}: Choose Action Type",
+            f"Step 1 of {self.total_steps}: Choose Action Type",
+            f"Step 2 of {self.total_steps}: Choose Icon & Label",
             f"Step 3 of {self.total_steps}: Preview & Confirm"
         ]
         self.step_title.configure(text=titles[self.current_step])
@@ -244,9 +261,15 @@ class WizardButtonConfigDialog:
         
         # Update buttons
         if self.current_step == 0:
-            self.back_button.configure(state="disabled")
+            # Stap 1: toon leegmaken (als beschikbaar), verberg terug
+            self.back_button.pack_forget()
+            if self.clear_button:
+                self.clear_button.pack(side="left", before=self.next_button)
         else:
-            self.back_button.configure(state="normal")
+            # Stap 2+: toon terug, verberg leegmaken
+            if self.clear_button:
+                self.clear_button.pack_forget()
+            self.back_button.pack(side="left")
         
         if self.current_step == self.total_steps - 1:
             self.next_button.configure(text="💾 SAVE & FINISH")
@@ -261,9 +284,9 @@ class WizardButtonConfigDialog:
         
         # Show appropriate step
         if step == 0:
-            self._show_step_icon_label()
-        elif step == 1:
             self._show_step_hotkey()
+        elif step == 1:
+            self._show_step_icon_label()
         elif step == 2:
             self._show_step_preview()
         
@@ -532,43 +555,57 @@ class WizardButtonConfigDialog:
         ).pack(padx=15, pady=(15, 10), anchor="w")
         
         self.media_var = ctk.StringVar(value=self.selected_hotkey if self.selected_hotkey_type == 'media' else "")
-        
-        # Large buttons voor elke media control
+
+        # Groepeer per categorie
+        categories = {}
         for mc in self.MEDIA_CONTROLS:
-            btn_frame = ctk.CTkFrame(
+            cat = mc.get("category", "Overig")
+            categories.setdefault(cat, []).append(mc)
+
+        for cat_name, controls in categories.items():
+            # Categorie label
+            ctk.CTkLabel(
                 self.hotkey_content_frame,
-                fg_color=("gray75", "gray25"),
-                corner_radius=8
-            )
-            btn_frame.pack(fill="x", padx=15, pady=5)
-            
-            radio = ctk.CTkRadioButton(
-                btn_frame,
-                text="",
-                variable=self.media_var,
-                value=mc['hotkey'],
-                width=20
-            )
-            radio.pack(side="left", padx=10)
-            
-            # Icon + text
-            content = ctk.CTkFrame(btn_frame, fg_color="transparent")
-            content.pack(side="left", fill="x", expand=True, pady=10)
-            
-            ctk.CTkLabel(
-                content,
-                text=f"{mc['icon']} {mc['name']}",
-                font=("Roboto", 15, "bold"),
-                anchor="w"
-            ).pack(anchor="w")
-            
-            ctk.CTkLabel(
-                content,
-                text=f"Key: {mc['hotkey']}",
-                font=("Courier", 11),
+                text=cat_name,
+                font=("Roboto", 11, "bold"),
                 text_color="gray",
                 anchor="w"
-            ).pack(anchor="w")
+            ).pack(padx=15, pady=(10, 2), anchor="w")
+
+            for mc in controls:
+                btn_frame = ctk.CTkFrame(
+                    self.hotkey_content_frame,
+                    fg_color=("gray75", "gray25"),
+                    corner_radius=8
+                )
+                btn_frame.pack(fill="x", padx=15, pady=3)
+                
+                radio = ctk.CTkRadioButton(
+                    btn_frame,
+                    text="",
+                    variable=self.media_var,
+                    value=mc['hotkey'],
+                    width=20
+                )
+                radio.pack(side="left", padx=10)
+                
+                content = ctk.CTkFrame(btn_frame, fg_color="transparent")
+                content.pack(side="left", fill="x", expand=True, pady=8)
+                
+                ctk.CTkLabel(
+                    content,
+                    text=f"{mc['icon']} {mc['name']}",
+                    font=("Roboto", 14, "bold"),
+                    anchor="w"
+                ).pack(anchor="w")
+                
+                ctk.CTkLabel(
+                    content,
+                    text=f"Key: {mc['hotkey']}",
+                    font=("Courier", 11),
+                    text_color="gray",
+                    anchor="w"
+                ).pack(anchor="w")
         
         ctk.CTkFrame(self.hotkey_content_frame, height=15, fg_color="transparent").pack()
     
@@ -979,38 +1016,34 @@ class WizardButtonConfigDialog:
         if self.current_step > 0:
             # Optionally save current values (no validation)
             try:
-                if self.current_step == 1 and hasattr(self, 'icon_entry'):
+                if self.current_step == 1 and hasattr(self, 'hotkey_type_var'):
                     # Going back from step 2 to step 1
-                    # Try to save icon/label if they exist
-                    icon = self.icon_entry.get().strip()
-                    label = self.label_entry.get().strip()
-                    if icon:
-                        self.selected_icon = icon
-                    if label:
-                        self.selected_label = label
-                
-                elif self.current_step == 2 and hasattr(self, 'hotkey_type_var'):
-                    # Going back from step 3 to step 2
-                    # Try to save action type if valid
                     if self.hotkey_type_var.get() == "media":
                         hotkey = self.media_var.get()
                         if hotkey:
                             self.selected_hotkey = hotkey
                             self.selected_hotkey_type = 'media'
                     elif self.hotkey_type_var.get() == "app":
-                        # App launch - keep the selected path
                         self.selected_hotkey_type = 'app'
                     else:
                         parts = []
                         for name, var in self.modifier_vars.items():
                             if var.get():
                                 parts.append(name)
-                        
                         key = self.key_entry.get().strip().lower()
                         if key:
                             parts.append(key)
                             self.selected_hotkey = "+".join(parts)
                             self.selected_hotkey_type = 'custom'
+                
+                elif self.current_step == 2 and hasattr(self, 'icon_entry'):
+                    # Going back from step 3 to step 2
+                    icon = self.icon_entry.get().strip()
+                    label = self.label_entry.get().strip()
+                    if icon:
+                        self.selected_icon = icon
+                    if label:
+                        self.selected_label = label
             except:
                 pass  # If widgets don't exist, that's fine
             
@@ -1025,24 +1058,7 @@ class WizardButtonConfigDialog:
         else:
             # Validate AND save current step values
             if self.current_step == 0:
-                # Step 1: Icon & label
-                icon = self.icon_entry.get().strip()
-                label = self.label_entry.get().strip()
-                
-                if not icon:
-                    self._show_error("❌ Please choose an icon!")
-                    return
-                
-                if not label:
-                    self._show_error("❌ Please enter a label!")
-                    return
-                
-                # Save values
-                self.selected_icon = icon
-                self.selected_label = label
-            
-            elif self.current_step == 1:
-                # Step 2: Action type (hotkey or app)
+                # Step 1: Action type (hotkey or app)
                 if self.hotkey_type_var.get() == "media":
                     hotkey = self.media_var.get()
                     if not hotkey:
@@ -1055,7 +1071,6 @@ class WizardButtonConfigDialog:
                     self.selected_app_path = ''
                 
                 elif self.hotkey_type_var.get() == "app":
-                    # App launch validation
                     if not self.selected_app_path:
                         self._show_error("❌ Please select an application!")
                         return
@@ -1083,6 +1098,23 @@ class WizardButtonConfigDialog:
                     self.selected_hotkey_type = 'custom'
                     self.selected_app_path = ''
             
+            elif self.current_step == 1:
+                # Step 2: Icon & label
+                icon = self.icon_entry.get().strip()
+                label = self.label_entry.get().strip()
+                
+                if not icon:
+                    self._show_error("❌ Please choose an icon!")
+                    return
+                
+                if not label:
+                    self._show_error("❌ Please enter a label!")
+                    return
+                
+                # Save values
+                self.selected_icon = icon
+                self.selected_label = label
+            
             # Go to next step (values are now saved)
             self.current_step += 1
             self._show_step(self.current_step)
@@ -1105,6 +1137,54 @@ class WizardButtonConfigDialog:
         self._show_success("✅ Configuration saved!")
         self.dialog.after(600, self.dialog.destroy)
     
+    def _confirm_clear(self):
+        """Vraag bevestiging voordat de knop leeggemaakt wordt."""
+        confirm = ctk.CTkToplevel(self.dialog)
+        confirm.title("Bevestigen")
+        confirm.geometry("340x160")
+        confirm.transient(self.dialog)
+        confirm.grab_set()
+        confirm.resizable(False, False)
+
+        confirm.update_idletasks()
+        x = (confirm.winfo_screenwidth() // 2) - 170
+        y = (confirm.winfo_screenheight() // 2) - 80
+        confirm.geometry(f"340x160+{x}+{y}")
+
+        ctk.CTkLabel(
+            confirm,
+            text="Knop leegmaken?",
+            font=("Roboto", 16, "bold")
+        ).pack(pady=(20, 5))
+
+        ctk.CTkLabel(
+            confirm,
+            text="De huidige configuratie wordt verwijderd.",
+            font=("Roboto", 12),
+            text_color="gray"
+        ).pack(pady=(0, 15))
+
+        btn_row = ctk.CTkFrame(confirm, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20)
+
+        ctk.CTkButton(
+            btn_row,
+            text="Annuleren",
+            command=confirm.destroy,
+            height=40,
+            fg_color="gray",
+            hover_color="gray30"
+        ).pack(side="left", expand=True, fill="x", padx=(0, 6))
+
+        ctk.CTkButton(
+            btn_row,
+            text="🗑️ Leegmaken",
+            command=lambda: [confirm.destroy(), self._handle_clear()],
+            height=40,
+            fg_color="red",
+            hover_color="darkred"
+        ).pack(side="right", expand=True, fill="x")
+
     def _handle_clear(self):
         """Clear button configuration."""
         if self.on_clear:

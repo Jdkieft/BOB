@@ -77,8 +77,8 @@ FONT_MONOSPACE = ("Courier", 12)
 # ============================================================================
 
 # Window grootte
-WINDOW_WIDTH = 1400
-WINDOW_HEIGHT = 850
+WINDOW_WIDTH = 1200
+WINDOW_HEIGHT = 900
 
 # Header hoogte
 HEADER_HEIGHT = 80

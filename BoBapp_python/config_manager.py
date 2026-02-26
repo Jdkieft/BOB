@@ -350,3 +350,27 @@ class ConfigManager:
             Dict met {original_name: display_name} mappings
         """
         return self.config.get('app_name_mappings', {}).copy()
+
+    def get_slider_volume(self, slider: int) -> float:
+        """
+        Haal het laatst opgeslagen volume op voor een slider.
+
+        Args:
+            slider: Slider nummer (0-3)
+
+        Returns:
+            Volume level tussen 0.0 en 1.0 (standaard 0.5 als niet opgeslagen)
+        """
+        return self.config.get(f"slider_{slider}_volume", 0.5)
+
+    def set_slider_volume(self, slider: int, volume: float) -> None:
+        """
+        Sla het huidige volume op voor een slider.
+
+        Args:
+            slider: Slider nummer (0-3)
+            volume: Volume level tussen 0.0 en 1.0
+        """
+        volume = max(0.0, min(1.0, volume))
+        self.config[f"slider_{slider}_volume"] = volume
+        self.save()
