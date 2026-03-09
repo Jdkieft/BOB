@@ -298,7 +298,7 @@ class WizardButtonConfigDialog:
         
         ctk.CTkLabel(
             icon_section,
-            text="1️⃣ Choose an Icon",
+            text="Choose an Icon",
             font=("Roboto", 16, "bold"),
             anchor="w"
         ).pack(padx=15, pady=(15, 10), anchor="w")
@@ -391,7 +391,7 @@ class WizardButtonConfigDialog:
         
         ctk.CTkLabel(
             label_section,
-            text="2️⃣ Enter a Label",
+            text="Enter a Label",
             font=("Roboto", 16, "bold"),
             anchor="w"
         ).pack(padx=15, pady=(15, 10), anchor="w")

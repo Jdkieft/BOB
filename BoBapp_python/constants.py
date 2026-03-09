@@ -46,7 +46,6 @@ COLOR_BUTTON_HOVER_DARK = "gray35"
 
 # Mooie blauwe accent kleuren (geïnspireerd door moderne UI)
 COLOR_ACCENT = "#3B82F6"           # Moderne blauwe accent
-COLOR_ACCENT_HOVER = "#2563EB"     # Donkerder voor hover
 COLOR_ACCENT_ACTIVE = "#60A5FA"    # Lichter voor active/selected
 
 COLOR_BUTTON_ACTIVE = COLOR_ACCENT_ACTIVE   # Voor geconfigureerde buttons
@@ -55,21 +54,18 @@ COLOR_BUTTON_FOCUS = COLOR_ACCENT           # Voor hover/focus
 # Status kleuren
 COLOR_SUCCESS = "green"
 COLOR_ERROR = "red"
-COLOR_WARNING = "orange"
 
 
 # ============================================================================
 # FONTS
 # ============================================================================
 
-FONT_TITLE = ("Inter", 28, "bold")
+# Gebruikt in main_window voor mode selector header
 FONT_HEADER = ("Roboto", 20, "bold")
-FONT_SUBHEADER = ("Roboto", 18, "bold")
-FONT_NORMAL = ("Roboto", 14)
-FONT_SMALL = ("Roboto", 11)
-FONT_TINY = ("Roboto", 9)
-FONT_ICON = ("Segoe UI Emoji", 45)
-FONT_MONOSPACE = ("Courier", 12)
+
+# Note: Andere fonts worden momenteel hardcoded in de widgets gedefinieerd
+# voor maximale controle over de UI. Toekomstige versie kan deze
+# centraliseren voor betere consistentie.
 
 
 # ============================================================================
@@ -85,7 +81,6 @@ HEADER_HEIGHT = 80
 
 # Button grid afmetingen
 BUTTON_SIZE = 160
-BUTTON_SPACING = 10
 BUTTON_CORNER_RADIUS = 15
 BUTTON_BORDER_WIDTH = 3
 
@@ -179,8 +174,6 @@ HOTKEY_INFO_TEXT = """Available keys:
 MSG_NO_DEVICES = "❌ Geen devices gevonden\n\nSluit je Arduino/Pico aan"
 MSG_CONNECTED = "✅ Connected"
 MSG_DISCONNECTED = "❌ Not Connected"
-MSG_SYNC_COMPLETE = "✅ Sync complete!"
-MSG_CONFIG_SAVED = "💾 Config saved"
 MSG_EMPTY_HOTKEY = "❌ Main key mag niet leeg zijn!"
 
 MSG_INFO_DEFAULT = """Click een knop om te configureren

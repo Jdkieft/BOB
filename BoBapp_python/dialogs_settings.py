@@ -4,7 +4,6 @@ Settings Dialog
 Algemene instellingen voor de Stream Deck Manager:
 - Verbinding (COM poort)
 - Autostart met Windows
-- Weergave (dark/light mode)
 - Export / Import config
 """
 
