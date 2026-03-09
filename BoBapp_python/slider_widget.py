@@ -124,15 +124,17 @@ class AppPool:
 
         for app, pill in self._pills.items():
             if app in used:
+                # App in gebruik: grijs + niet-sleepbare cursor
                 pill.configure(fg_color=self.PILL_BG_USED[idx])
                 for child in pill.winfo_children():
                     if isinstance(child, ctk.CTkLabel):
-                        child.configure(text_color="gray")
+                        child.configure(text_color="gray", cursor="arrow")  # ← arrow = niet sleepbaar
             else:
+                # App beschikbaar: normaal + sleepbare cursor
                 pill.configure(fg_color=self.PILL_BG_IDLE[idx])
                 for child in pill.winfo_children():
                     if isinstance(child, ctk.CTkLabel):
-                        child.configure(text_color=self.PILL_FG[idx])
+                        child.configure(text_color=self.PILL_FG[idx], cursor="hand2")  # ← hand2 = sleepbaar
 
     # ------------------------------------------------------------------
     # Intern
@@ -190,6 +192,17 @@ class AppPool:
             widget.bind("<ButtonRelease-1>",  self._on_drag_end)
 
     def _on_drag_start(self, event, app_name: str):
+        # 🔧 FIX: Check of app al in een slider zit - zo ja, niet slepen!
+        used_apps = set()
+        for sl in self._sliders:
+            if not sl.is_master_volume:
+                used_apps.update(sl.assigned_apps)
+        
+        if app_name in used_apps:
+            # App is al in gebruik - negeer drag
+            print(f"⚠️  {app_name} is al toegewezen aan een slider")
+            return
+        
         _drag.app_name = app_name
         _drag.source_slider = None          # komt uit de pool, niet uit een slider
 
@@ -392,6 +405,9 @@ class SliderWidget:
         """
         Verberg app-tags die niet in active_apps zitten (inactief > 5 min),
         en toon tags die weer actief zijn.
+        
+        BELANGRIJK: Apps worden getoond in de VOLGORDE van assigned_apps,
+        niet in de volgorde waarin ze actief werden.
 
         Args:
             active_apps: Lijst van apps die momenteel recent actief zijn
@@ -400,20 +416,38 @@ class SliderWidget:
             return
 
         active_set = set(active_apps)
-
+        
+        # 🔧 FIX STAP 1: Verwijder empty label VOLLEDIG (niet alleen pack_forget)
+        # Dit voorkomt dat lege ruimte bovenaan blijft hangen
+        self._hide_empty_state()
+        if self.empty_label and self.empty_label.winfo_exists():
+            try:
+                self.empty_label.destroy()
+                self.empty_label = None
+            except Exception:
+                pass
+        
+        # 🔧 FIX STAP 2: Maak een dict van app_name -> widget
+        app_widgets = {}
         for widget in self.apps_container.winfo_children():
             if not isinstance(widget, ctk.CTkFrame):
                 continue
             app_name = getattr(widget, '_app_name', None)
-            if app_name is None:
-                continue
+            if app_name is not None:
+                app_widgets[app_name] = widget
+        
+        # 🔧 FIX STAP 3: Unpack ALLEEN de app widgets
+        for widget in app_widgets.values():
+            widget.pack_forget()
+        
+        # 🔧 FIX STAP 4: Pack widgets terug in de volgorde van assigned_apps
+        # Alleen als ze actief zijn (in active_set)
+        for app_name in self.assigned_apps:
+            if app_name in app_widgets and app_name in active_set:
+                # BELANGRIJK: side="top" zorgt dat ze bovenaan komen, NIET onderaan
+                app_widgets[app_name].pack(side="top", fill="x", pady=3, padx=6)
 
-            if app_name in active_set:
-                widget.pack(fill="x", pady=3, padx=6)
-            else:
-                widget.pack_forget()
-
-        # Lege-state tonen als alle tags verborgen zijn
+        # 🔧 FIX STAP 5: Toon empty state ALLEEN als echt geen apps zichtbaar zijn
         visible = any(
             isinstance(w, ctk.CTkFrame) and w.winfo_ismapped()
             for w in self.apps_container.winfo_children()
@@ -421,6 +455,7 @@ class SliderWidget:
         if not visible:
             self._show_empty_state()
         else:
+            # Zorg ervoor dat empty label echt weg is
             self._hide_empty_state()
 
     def set_app_name_mappings(self, mappings: dict):
@@ -671,8 +706,14 @@ class SliderWidget:
         if self.is_master_volume or self.apps_container is None:
             return
 
-        # Verberg empty state
+        # Verberg empty state EN destroy het volledig
         self._hide_empty_state()
+        if self.empty_label and self.empty_label.winfo_exists():
+            try:
+                self.empty_label.destroy()
+                self.empty_label = None
+            except Exception:
+                pass
 
         display = self._get_app_display_name(app_name)
 
@@ -682,7 +723,8 @@ class SliderWidget:
             corner_radius=8,
             height=36
         )
-        tag_frame.pack(fill="x", pady=3, padx=6)
+        # 🔧 FIX: side="top" zorgt dat apps BOVENAAN komen in volgorde, niet onderaan
+        tag_frame.pack(side="top", fill="x", pady=3, padx=6)
         tag_frame.pack_propagate(False)
 
         # Sla app-naam op als attribuut voor identificatie bij drag
@@ -757,14 +799,18 @@ class SliderWidget:
                 font=("Roboto", 13),
                 justify="center"
             )
-            self.empty_label.pack(expand=True)
+            # 🔧 FIX: side="top" + fill="both" in plaats van expand=True
+            # Dit voorkomt dat lege ruimte alle ruimte claimt
+            self.empty_label.pack(side="top", fill="both", pady=20)
 
     def _hide_empty_state(self):
+        """Verwijder empty state VOLLEDIG (destroy), niet alleen pack_forget."""
         try:
             if self.empty_label and self.empty_label.winfo_exists():
-                self.empty_label.pack_forget()
+                self.empty_label.destroy()
+                self.empty_label = None
         except Exception:
-            pass
+            self.empty_label = None
 
     def _update_empty_state(self):
         if self.is_master_volume or self.apps_container is None:

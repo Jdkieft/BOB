@@ -71,6 +71,11 @@ class SerialManager:
         self.keepalive_interval: float = 5.0  # stuur elke 5s een ping naar Pico
         self.last_keepalive_sent: float = 0
         
+        # Connection cooldown: negeer slider events direct na connect
+        # Dit voorkomt dat oude Pico-waardes het PC volume verstoren
+        self.connection_time: float = 0
+        self.SLIDER_COOLDOWN_SECONDS: float = 3.0  # Eerste 3 sec na connect negeren
+        
         # Callbacks voor inkomende berichten
         self.callbacks = {
             'BTN_PRESS': None,      # (mode, button) -> None
@@ -128,6 +133,9 @@ class SerialManager:
             # Initialize heartbeat
             self.last_message_time = time.time()
             self.last_keepalive_sent = time.time()
+            
+            # Set connection time voor slider cooldown
+            self.connection_time = time.time()
             
             # Start read thread
             self.running = True
@@ -309,6 +317,13 @@ class SerialManager:
                     param_parts = params.split(':')
                     slider = int(param_parts[0])
                     value = int(param_parts[1])
+                    
+                    # 🛡️ COOLDOWN: Negeer slider events in de eerste paar seconden na verbinding
+                    # Dit voorkomt dat oude Pico-waardes het PC volume verstoren
+                    time_since_connect = time.time() - self.connection_time
+                    if time_since_connect < self.SLIDER_COOLDOWN_SECONDS:
+                        print(f"⏸️  Ignoring SLIDER_CHANGE (cooldown: {time_since_connect:.1f}s < {self.SLIDER_COOLDOWN_SECONDS}s)")
+                        return
                     
                     if self.callbacks['SLIDER_CHANGE']:
                         self.callbacks['SLIDER_CHANGE'](slider, value)
