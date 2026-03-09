@@ -92,7 +92,11 @@ class StreamDeckManager(ctk.CTk):
         self.config_manager = ConfigManager()
         self.serial_manager = SerialManager()
         self.audio_manager = AudioManager()
-        self.spotify_manager = SpotifyManager()
+        
+        # Spotify Manager: Lazy loading voor sneller opstarten
+        # Wordt pas geïnitialiseerd als er daadwerkelijk media speelt
+        self.spotify_manager = None
+        self._spotify_init_scheduled = False
         
         # Register callbacks voor berichten van Pico
         self.serial_manager.set_callback('BTN_PRESS', self._handle_pico_button_press)
@@ -100,14 +104,15 @@ class StreamDeckManager(ctk.CTk):
         self.serial_manager.set_callback('MODE_CHANGE', self._handle_pico_mode_change)
         self.serial_manager.set_callback('CONNECTION_CHANGED', self._handle_connection_changed)
         
-        # Register Spotify callback
-        self.spotify_manager.set_callback(self._handle_spotify_track_change)
-        
         # State
         self.current_mode = 0
         self.num_modes = self.config_manager.get_num_modes()
         self.slider_apps = [[], [], [], []]  # 3 voor apps + 1 voor master volume
         self._slider_active_cache = {}  # {app_name: last_seen_timestamp} voor 5-min fade
+        
+        # Slider debouncing: voorkom dat kleine bewegingen meerdere volume changes triggeren
+        self._slider_last_change = {}  # {slider_index: timestamp}
+        self._SLIDER_DEBOUNCE_MS = 200  # Minimum tijd tussen volume changes (milliseconden)
         
         # UI Components (worden later gevuld)
         self.button_widgets: List[ButtonWidget] = []
@@ -809,15 +814,36 @@ class StreamDeckManager(ctk.CTk):
                 text=f"🔄 Zoeken naar {preferred_port}...\n\nAuto-reconnect actief.\nSluit je Pico aan om te verbinden."
             )
         
-        # Start Spotify monitor
-        print("🎵 Starting Spotify monitor...")
-        self.spotify_manager.start()
+        # Spotify monitor: Lazy loading - start pas na 5 seconden
+        # Dit versnelt het opstarten aanzienlijk
+        print("🎵 Scheduling Spotify monitor (delayed start)...")
+        self.after(5000, self._init_spotify_manager)
     
     def _load_button_states(self):
         """Laad button states voor huidige mode."""
         for i in range(BUTTONS_PER_MODE):
             config = self.config_manager.get_button_config(self.current_mode, i)
             self.button_widgets[i].update_display(config)
+    
+    def _init_spotify_manager(self):
+        """
+        Initialiseer Spotify Manager (lazy loading).
+        
+        Deze functie wordt pas na 5 seconden aangeroepen om het opstarten
+        te versnellen. Spotify monitoring is niet kritisch bij opstarten.
+        """
+        if self.spotify_manager is not None:
+            return  # Al geïnitialiseerd
+        
+        print("🎵 Initializing Spotify monitor...")
+        try:
+            self.spotify_manager = SpotifyManager()
+            self.spotify_manager.set_callback(self._handle_spotify_track_change)
+            self.spotify_manager.start()
+            print("✅ Spotify monitor started")
+        except Exception as e:
+            print(f"⚠️ Spotify monitor init failed: {e}")
+            self.spotify_manager = None
     
     # ========================================================================
     # EVENT HANDLERS
@@ -1251,6 +1277,21 @@ class StreamDeckManager(ctk.CTk):
             print(f"⚠️  Slider {slider} out of range (max {NUM_SLIDERS-1})")
             return
         
+        # 🛡️ DEBOUNCING: Voorkom te snelle volume changes
+        import time
+        now = time.time()
+        last_change = self._slider_last_change.get(slider, 0)
+        time_since_last = (now - last_change) * 1000  # Convert naar ms
+        
+        if time_since_last < self._SLIDER_DEBOUNCE_MS:
+            print(f"⏸️  Debouncing slider {slider} ({time_since_last:.0f}ms < {self._SLIDER_DEBOUNCE_MS}ms)")
+            # Update alleen de visuele weergave, geen volume change
+            self.after(0, lambda: self.slider_widgets[slider].update_volume_display(value / 100.0))
+            return
+        
+        # Update timestamp
+        self._slider_last_change[slider] = now
+        
         print(f"🎚️ Pico slider {slider} changed to {value}%")
         
         # Update visuele weergave (moet op main thread)
@@ -1473,8 +1514,8 @@ class StreamDeckManager(ctk.CTk):
                     pass
                 self.system_tray_active = False
             
-            # Stop Spotify monitor
-            if hasattr(self, 'spotify_manager'):
+            # Stop Spotify monitor (alleen als geïnitialiseerd)
+            if hasattr(self, 'spotify_manager') and self.spotify_manager is not None:
                 print("   Stopping Spotify monitor...")
                 self.spotify_manager.stop()
             
