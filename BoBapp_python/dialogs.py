@@ -21,27 +21,6 @@ from constants import (
 )
 
 
-"""
-Dialog Windows - Wizard Style Version
-
-Wizard-style button configuratie dialog met duidelijke stappen:
-- Step 1: Icon & Label kiezen
-- Step 2: Hotkey configureren
-- Step 3: Preview & Bevestigen
-"""
-
-import sys
-from pathlib import Path
-script_dir = Path(__file__).parent
-sys.path.insert(0, str(script_dir))
-
-import customtkinter as ctk
-from typing import Callable, Optional, Dict, List, Tuple
-
-from constants import (
-    COLOR_BUTTON_NORMAL_LIGHT, COLOR_BUTTON_NORMAL_DARK,
-    HOTKEY_INFO_TEXT, MSG_EMPTY_HOTKEY
-)
 
 
 class WizardButtonConfigDialog:

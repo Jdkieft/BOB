@@ -73,7 +73,6 @@ class ConfigManager:
         print(f"📁 Config file location: {self.config_file}")
         
         self.config: Dict[str, Any] = self.load()
-        self.config: Dict[str, Any] = self.load()
         
         # Zorg ervoor dat num_modes bestaat in config
         if 'num_modes' not in self.config:
