@@ -298,7 +298,7 @@ class WizardButtonConfigDialog:
         
         ctk.CTkLabel(
             icon_section,
-            text="Choose an Icon",
+            text="1️⃣ Choose an Icon",
             font=("Roboto", 16, "bold"),
             anchor="w"
         ).pack(padx=15, pady=(15, 10), anchor="w")
@@ -391,7 +391,7 @@ class WizardButtonConfigDialog:
         
         ctk.CTkLabel(
             label_section,
-            text="Enter a Label",
+            text="2️⃣ Enter a Label",
             font=("Roboto", 16, "bold"),
             anchor="w"
         ).pack(padx=15, pady=(15, 10), anchor="w")
@@ -466,7 +466,7 @@ class WizardButtonConfigDialog:
         
         media_radio = ctk.CTkRadioButton(
             type_options,
-            text="🎵 Media Control (Play, Pause, Next, etc.)",
+            text="🎵    Media Control (Play, Pause, Next, etc.)",
             variable=self.hotkey_type_var,
             value="media",
             font=("Roboto", 13),
@@ -486,7 +486,7 @@ class WizardButtonConfigDialog:
         
         app_radio = ctk.CTkRadioButton(
             type_options,
-            text="🚀 Open Application",
+            text="🚀     Open Application",
             variable=self.hotkey_type_var,
             value="app",
             font=("Roboto", 13),
@@ -1132,13 +1132,13 @@ class WizardButtonConfigDialog:
 
         ctk.CTkLabel(
             confirm,
-            text="Knop leegmaken?",
+            text="Clear button?",
             font=("Roboto", 16, "bold")
         ).pack(pady=(20, 5))
 
         ctk.CTkLabel(
             confirm,
-            text="De huidige configuratie wordt verwijderd.",
+            text="The current configuration will be removed.",
             font=("Roboto", 12),
             text_color="gray"
         ).pack(pady=(0, 15))
@@ -1148,7 +1148,7 @@ class WizardButtonConfigDialog:
 
         ctk.CTkButton(
             btn_row,
-            text="Annuleren",
+            text="Cancel",
             command=confirm.destroy,
             height=40,
             fg_color="gray",
@@ -1157,7 +1157,7 @@ class WizardButtonConfigDialog:
 
         ctk.CTkButton(
             btn_row,
-            text="🗑️ Leegmaken",
+            text="🗑️ Clear",
             command=lambda: [confirm.destroy(), self._handle_clear()],
             height=40,
             fg_color="red",

@@ -171,20 +171,20 @@ HOTKEY_INFO_TEXT = """Available keys:
 # MESSAGES
 # ============================================================================
 
-MSG_NO_DEVICES = "❌ Geen devices gevonden\n\nSluit je Arduino/Pico aan"
+MSG_NO_DEVICES = "❌ No devices found\n\nConnect your Arduino/Pico"
 MSG_CONNECTED = "✅ Connected"
 MSG_DISCONNECTED = "❌ Not Connected"
-MSG_EMPTY_HOTKEY = "❌ Main key mag niet leeg zijn!"
+MSG_EMPTY_HOTKEY = "❌ Main key cannot be empty!"
 
-MSG_INFO_DEFAULT = """Click een knop om te configureren
+MSG_INFO_DEFAULT = """Click a button to configure
 
-Of kies een Quick Action en
-click dan een knop"""
+Or choose a Quick Action and
+then click a button"""
 
 MSG_INFO_QUICK_ACTION = """Selected:
 {icon} {name}
 
 Hotkey: {hotkey}
 
-Click een knop (#1-9) om
-deze actie toe te wijzen"""
+Click a button (#1-9) to
+assign this action"""

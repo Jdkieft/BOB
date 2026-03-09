@@ -75,7 +75,7 @@ class AppPool:
         # Titel
         ctk.CTkLabel(
             self.frame,
-            text="🎧  Beschikbare apps  —  sleep naar een slider",
+            text="🎧  Available apps  —  drag to a slider",
             font=("Roboto", 12, "bold"),
             anchor="w"
         ).pack(padx=12, pady=(8, 4), anchor="w")
@@ -91,7 +91,7 @@ class AppPool:
 
         self._empty_label = ctk.CTkLabel(
             self._pill_container,
-            text="Geen audio-apps gevonden",
+            text="No audio apps found",
             text_color="gray",
             font=("Roboto", 11)
         )
@@ -149,7 +149,7 @@ class AppPool:
         if not self.available_apps:
             self._empty_label = ctk.CTkLabel(
                 self._pill_container,
-                text="Geen audio-apps gevonden",
+                text="No audio apps found",
                 text_color="gray",
                 font=("Roboto", 11)
             )
@@ -794,7 +794,7 @@ class SliderWidget:
         if self.empty_label is None or not self.empty_label.winfo_exists():
             self.empty_label = ctk.CTkLabel(
                 self.apps_container,
-                text="Sleep hier een app naartoe",
+                text="Drag an app here",
                 text_color="gray",
                 font=("Roboto", 13),
                 justify="center"
@@ -854,7 +854,7 @@ class SliderWidget:
                     self.on_rename_callback(self.index, new_name)
                 dialog.destroy()
             elif len(new_name) > 30:
-                err = ctk.CTkLabel(dialog, text="❌ Naam te lang! (max 30 tekens)",
+                err = ctk.CTkLabel(dialog, text="❌ Name too long! (max 30 characters)",
                                    font=("Roboto", 11, "bold"), text_color="red")
                 err.pack(pady=5)
                 dialog.after(2000, err.destroy)
@@ -904,7 +904,7 @@ class SliderWidget:
                     self.on_app_rename_callback(original_app_name, new_name)
                 dialog.destroy()
             elif len(new_name) > 40:
-                err = ctk.CTkLabel(dialog, text="❌ Naam te lang! (max 40 tekens)",
+                err = ctk.CTkLabel(dialog, text="❌ Name too long! (max 40 characters)",
                                    font=("Roboto", 11, "bold"), text_color="red")
                 err.pack(pady=5)
                 dialog.after(2000, err.destroy)

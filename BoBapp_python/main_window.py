@@ -339,7 +339,7 @@ class StreamDeckManager(ctk.CTk):
 
         ctk.CTkLabel(
             header,
-            text="sleep apps naar een slider  •  rechtsclick om te hernoemen",
+            text="drag apps to a slider  •  right-click to rename",
             font=("Roboto", 10),
             text_color="gray"
         ).pack(side="right")
@@ -498,7 +498,7 @@ class StreamDeckManager(ctk.CTk):
         """Voeg een nieuwe mode toe."""
         if self.num_modes >= MAX_MODES_LIMIT:
             self.info_label.configure(
-                text=f"❌ Maximum aantal modes bereikt!\n\nJe kunt maximaal {MAX_MODES_LIMIT} modes hebben."
+                text=f"❌ Maximum modes reached!\n\nYou can have a maximum of {MAX_MODES_LIMIT} modes."
             )
             return
         
@@ -517,7 +517,7 @@ class StreamDeckManager(ctk.CTk):
         
         # Update info
         self.info_label.configure(
-            text=f"✅ Mode {self.num_modes} toegevoegd!\n\nJe hebt nu {self.num_modes} modes."
+            text=f"✅ Mode {self.num_modes} added!\n\nYou now have {self.num_modes} modes."
         )
         
         print(f"✅ Added mode {self.num_modes}")
@@ -526,7 +526,7 @@ class StreamDeckManager(ctk.CTk):
         """Verwijder de huidige geselecteerde mode."""
         if self.num_modes <= MIN_MODES:
             self.info_label.configure(
-                text=f"❌ Minimum aantal modes!\n\nJe moet minimaal {MIN_MODES} mode hebben."
+                text=f"❌ Minimum modes!\n\nYou must have at least {MIN_MODES} mode."
             )
             return
         
@@ -549,15 +549,15 @@ class StreamDeckManager(ctk.CTk):
         
         ctk.CTkLabel(
             dialog,
-            text=f"⚠️ {mode_name} verwijderen?",
+            text=f"⚠️ Delete {mode_name}?",
             font=("Roboto", 20, "bold")
         ).pack(pady=20)
         
         if has_configs:
-            warning_text = "Deze mode heeft geconfigureerde buttons.\nAlle configuraties worden permanent verwijderd!"
+            warning_text = "This mode has configured buttons.\nAll configurations will be permanently deleted!"
             text_color = "red"
         else:
-            warning_text = "Deze mode is leeg en kan veilig\nverwijderd worden."
+            warning_text = "This mode is empty and can be safely\ndeleted."
             text_color = "gray"
         
         ctk.CTkLabel(
@@ -569,7 +569,7 @@ class StreamDeckManager(ctk.CTk):
         
         ctk.CTkLabel(
             dialog,
-            text=f"Modes na deze worden hernummerd.\n(Mode {mode_to_remove + 2} → Mode {mode_to_remove + 1}, etc.)",
+            text=f"Modes after this will be renumbered.\n(Mode {mode_to_remove + 2} → Mode {mode_to_remove + 1}, etc.)",
             font=("Roboto", 11),
             text_color="gray"
         ).pack(pady=5)
@@ -660,7 +660,7 @@ class StreamDeckManager(ctk.CTk):
         
         # Update info
         self.info_label.configure(
-            text=f"✅ Mode verwijderd!\n\nJe hebt nu {self.num_modes} modes.\nModes zijn hernummerd."
+            text=f"✅ Mode deleted!\n\nYou now have {self.num_modes} modes.\nModes have been renumbered."
         )
         
         print(f"✅ Removed mode {mode_to_remove + 1} and shifted remaining modes")
@@ -716,13 +716,13 @@ class StreamDeckManager(ctk.CTk):
                 # Update grid title if this is current mode
                 
                 self.info_label.configure(
-                    text=f"✅ Mode hernoemd!\n\n'{current_name}' → '{new_name}'"
+                    text=f"✅ Mode renamed!\n\n'{current_name}' → '{new_name}'"
                 )
                 dialog.destroy()
             elif len(new_name) > 20:
                 error_label = ctk.CTkLabel(
                     dialog,
-                    text="❌ Naam te lang! (max 20 karakters)",
+                    text="❌ Name too long! (max 20 characters)",
                     font=("Roboto", 11, "bold"),
                     text_color="red"
                 )
@@ -811,7 +811,7 @@ class StreamDeckManager(ctk.CTk):
             print(f"🔄 Starting auto-reconnect...")
             self.serial_manager.start_auto_reconnect(preferred_port)
             self.info_label.configure(
-                text=f"🔄 Zoeken naar {preferred_port}...\n\nAuto-reconnect actief.\nSluit je Pico aan om te verbinden."
+                text=f"🔄 Searching for {preferred_port}...\n\nAuto-reconnect active.\nConnect your Pico to reconnect."
             )
         
         # Spotify monitor: Lazy loading - start pas na 5 seconden
@@ -929,7 +929,7 @@ class StreamDeckManager(ctk.CTk):
         
         # Update info label
         self.info_label.configure(
-            text=f"✅ Slider hernoemd!\n\nSlider {slider_index + 1} → '{new_name}'"
+            text=f"✅ Slider renamed!\n\nSlider {slider_index + 1} → '{new_name}'"
         )
         
         print(f"✅ Slider {slider_index} renamed to '{new_name}'")
@@ -952,7 +952,7 @@ class StreamDeckManager(ctk.CTk):
         
         # Update info label
         self.info_label.configure(
-            text=f"✅ App hernoemd!\n\n'{original_name}' → '{display_name}'"
+            text=f"✅ App renamed!\n\n'{original_name}' → '{display_name}'"
         )
         
         print(f"✅ App '{original_name}' renamed to '{display_name}'")
@@ -1006,14 +1006,14 @@ class StreamDeckManager(ctk.CTk):
             preferred = self.config_manager.get_preferred_port()
             if preferred:
                 self.status_text.configure(
-                    text=f"Zoeken naar {preferred}...",
+                    text=f"Searching for {preferred}...",
                     text_color="orange"
                 )
                 self.info_label.configure(
-                    text=f"🔄 Verbinding verbroken!\n\nZoeken naar {preferred}...\n\nAuto-reconnect actief.\nSluit je Pico aan om te verbinden."
+                    text=f"🔄 Connection lost!\n\nSearching for {preferred}...\n\nAuto-reconnect active.\nConnect your Pico to reconnect."
                 )
             else:
-                self.status_text.configure(text="Niet verbonden", text_color="gray")
+                self.status_text.configure(text="Not connected", text_color="gray")
                 pass
     
     def _update_connection_status(self):
@@ -1030,16 +1030,16 @@ class StreamDeckManager(ctk.CTk):
             # Alles goed - blauwe indicator
             self.status_indicator.configure(text="●", text_color="#3B82F6")
             port = self.serial_manager.preferred_port or "Unknown"
-            self.status_text.configure(text=f"Verbonden met {port}", text_color="#3B82F6")
+            self.status_text.configure(text=f"Connected to {port}", text_color="#3B82F6")
         elif self.serial_manager.reconnect_running and self.serial_manager.preferred_port:
             # Auto-reconnect actief - oranje indicator
             self.status_indicator.configure(text="●", text_color="orange")
             port = self.serial_manager.preferred_port
-            self.status_text.configure(text=f"Zoeken naar {port}...", text_color="orange")
+            self.status_text.configure(text=f"Searching for {port}...", text_color="orange")
         else:
             # Niet verbonden - grijze indicator
             self.status_indicator.configure(text="●", text_color="gray")
-            self.status_text.configure(text="Niet verbonden", text_color="gray")
+            self.status_text.configure(text="Not connected", text_color="gray")
         
         # Schedule volgende update
         self.after(1000, self._update_connection_status)

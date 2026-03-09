@@ -4,6 +4,7 @@ Settings Dialog
 Algemene instellingen voor de Stream Deck Manager:
 - Verbinding (COM poort)
 - Autostart met Windows
+- Weergave (dark/light mode)
 - Export / Import config
 """
 
@@ -84,7 +85,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkButton(
             self,
-            text="✅ Sluiten",
+            text="✅ Close",
             command=self.destroy,
             height=45,
             font=("Roboto", 14, "bold"),
@@ -98,7 +99,7 @@ class SettingsDialog(ctk.CTkToplevel):
     # ------------------------------------------------------------------ #
 
     def _section_connection(self, parent):
-        frame = self._make_section(parent, "🔌 Verbinding")
+        frame = self._make_section(parent, "🔌 Connection")
 
         status_row = ctk.CTkFrame(frame, fg_color="transparent")
         status_row.pack(fill="x", padx=15, pady=(5, 8))
@@ -109,7 +110,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="left")
 
         self.conn_status_label = ctk.CTkLabel(
-            status_row, text="Controleren...",
+            status_row, text="Checking...",
             font=("Roboto", 12), anchor="w"
         )
         self.conn_status_label.pack(side="left")
@@ -118,14 +119,14 @@ class SettingsDialog(ctk.CTkToplevel):
         port_row.pack(fill="x", padx=15, pady=(0, 8))
 
         ctk.CTkLabel(
-            port_row, text="Poort:",
+            port_row, text="Port:",
             font=("Roboto", 12, "bold"), width=80, anchor="w"
         ).pack(side="left")
 
         preferred = self.config_manager.get_preferred_port()
         self.port_label = ctk.CTkLabel(
             port_row,
-            text=preferred if preferred else "Nog niet ingesteld",
+            text=preferred if preferred else "Not configured",
             font=("Roboto", 12), anchor="w"
         )
         self.port_label.pack(side="left")
@@ -134,7 +135,7 @@ class SettingsDialog(ctk.CTkToplevel):
         selector_row.pack(fill="x", padx=15, pady=(0, 15))
 
         ports = self.serial_manager.get_available_ports()
-        port_options = [f"{p[0]} — {p[1]}" for p in ports] if ports else ["❌ Geen poorten gevonden"]
+        port_options = [f"{p[0]} — {p[1]}" for p in ports] if ports else ["❌ No ports found"]
 
         self.port_var = ctk.StringVar()
         if preferred:
@@ -171,7 +172,7 @@ class SettingsDialog(ctk.CTkToplevel):
     # ------------------------------------------------------------------ #
 
     def _section_startup(self, parent):
-        frame = self._make_section(parent, "🚀 Opstarten")
+        frame = self._make_section(parent, "🚀 Startup")
 
         row = ctk.CTkFrame(frame, fg_color="transparent")
         row.pack(fill="x", padx=15, pady=15)
@@ -180,13 +181,13 @@ class SettingsDialog(ctk.CTkToplevel):
         text_col.pack(side="left", fill="x", expand=True)
 
         ctk.CTkLabel(
-            text_col, text="Start met Windows",
+            text_col, text="Start with Windows",
             font=("Roboto", 13, "bold"), anchor="w"
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             text_col,
-            text="Start automatisch op de achtergrond\nals Windows opstart.",
+            text="Automatically start in the background\nwhen Windows starts.",
             font=("Roboto", 10), anchor="w", justify="left"
         ).pack(anchor="w")
 
@@ -204,7 +205,7 @@ class SettingsDialog(ctk.CTkToplevel):
         if not AutostartManager.is_exe():
             ctk.CTkLabel(
                 frame,
-                text="⚠️  Werkt alleen bij een gebouwde .exe",
+                text="⚠️  Only works with built .exe",
                 font=("Roboto", 10), text_color="#e67e00", anchor="w"
             ).pack(padx=15, pady=(0, 12), anchor="w")
 
@@ -213,11 +214,11 @@ class SettingsDialog(ctk.CTkToplevel):
     # ------------------------------------------------------------------ #
 
     def _section_config(self, parent):
-        frame = self._make_section(parent, "💾 Configuratie")
+        frame = self._make_section(parent, "💾 Configuration")
 
         ctk.CTkLabel(
             frame,
-            text="Sla je instellingen op als bestand of laad een eerder opgeslagen configuratie.",
+            text="Save your settings to a file or load a previously saved configuration.",
             font=("Roboto", 11), wraplength=440, justify="left", anchor="w"
         ).pack(padx=15, pady=(5, 15), anchor="w")
 
@@ -225,7 +226,7 @@ class SettingsDialog(ctk.CTkToplevel):
         btn_row.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkButton(
-            btn_row, text="📤 Exporteer",
+            btn_row, text="📤 Export",
             command=self._do_export, height=42,
             font=("Roboto", 12, "bold"),
             fg_color=self.C_BTN_MUTED,
@@ -234,7 +235,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="left", expand=True, fill="x", padx=(0, 6))
 
         ctk.CTkButton(
-            btn_row, text="📥 Importeer",
+            btn_row, text="📥 Import",
             command=self._do_import, height=42,
             font=("Roboto", 12, "bold"),
             fg_color=self.C_BTN_MUTED,
@@ -291,14 +292,14 @@ class SettingsDialog(ctk.CTkToplevel):
     def _update_status(self):
         status = self.serial_manager.get_connection_status()
         if self.serial_manager.is_connected and status.get('connected'):
-            self.conn_status_label.configure(text="✅ Verbonden", text_color="#2e7d32")
+            self.conn_status_label.configure(text="✅ Connected", text_color="#2e7d32")
         elif status.get('reconnect_active'):
             port = self.config_manager.get_preferred_port()
             self.conn_status_label.configure(
-                text=f"🔄 Zoeken naar {port}...", text_color="#e67e00"
+                text=f"🔄 Searching for {port}...", text_color="#e67e00"
             )
         else:
-            self.conn_status_label.configure(text="❌ Niet verbonden", text_color="#c0392b")
+            self.conn_status_label.configure(text="❌ Not connected", text_color="#c0392b")
 
     def _start_status_refresh(self):
         self._update_status()
