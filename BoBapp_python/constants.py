@@ -188,3 +188,12 @@ Hotkey: {hotkey}
 
 Click a button (#1-9) to
 assign this action"""
+
+
+
+# ============================================================================
+# Appversion & Updates
+# ============================================================================
+
+APP_VERSION = "0.12"           # Your current version
+GITHUB_REPO = "jdkieft/BOB"    # Your GitHub repo
