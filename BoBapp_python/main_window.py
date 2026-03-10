@@ -147,6 +147,9 @@ class StreamDeckManager(ctk.CTk):
         
         # Laad opgeslagen state
         self._load_initial_state()
+        
+        # Check for updates at startup (delayed to not slow down startup)
+        self.after(3000, self._startup_update_check)  # Check na 3 seconden
     
     # ========================================================================
     # UI CREATION
@@ -1554,6 +1557,20 @@ class StreamDeckManager(ctk.CTk):
     # UPDATE SYSTEM
     # ========================================================================
     
+    def _startup_update_check(self):
+        """
+        Check for updates at startup (in background).
+        
+        Runs in a separate thread to not block the UI.
+        """
+        import threading
+        
+        def check_thread():
+            print("🔍 Checking for updates at startup...")
+            self.update_manager.check_for_updates(force=False)
+        
+        threading.Thread(target=check_thread, daemon=True).start()
+    
     def _on_update_available(self, update_info: dict):
         """Called when update is available."""
         print(f"✨ Update available: v{update_info['version']}")
@@ -1567,7 +1584,8 @@ class StreamDeckManager(ctk.CTk):
             current_version=APP_VERSION,
             on_update=self._handle_update_download,
             on_dismiss=lambda: print("🔔 Remind later"),
-            on_skip=self.update_manager.dismiss_update
+            on_skip=self.update_manager.dismiss_update,
+            check_interval_hours=self.update_manager.check_interval_hours
         )
     
     def _handle_update_download(self):
@@ -1605,6 +1623,12 @@ class StreamDeckManager(ctk.CTk):
         )
         
         if result:
+            # Sla de nieuwe versie op zodat die bij herstart getoond wordt
+            new_version = self.update_manager.latest_version_info.get('version')
+            if new_version:
+                self.config_manager.set_installed_version(new_version)
+                print(f"💾 Saved new version: {new_version}")
+            
             if self.update_manager.install_update(installer_path):
                 print("🚀 Starting installer...")
                 self._quit_app()
@@ -1640,3 +1664,4 @@ class StreamDeckManager(ctk.CTk):
         """
         # Normale sluiting -> naar tray
         self._minimize_to_tray()
+

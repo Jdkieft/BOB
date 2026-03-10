@@ -94,6 +94,15 @@ class WizardButtonConfigDialog:
         y = (self.dialog.winfo_screenheight() // 2) - 325
         self.dialog.geometry(f"700x650+{x}+{y}")
         
+        # Titlebar icoon - exact zoals main_window
+        try:
+            from pathlib import Path
+            import sys
+            icon_path = Path(sys.executable).parent / "BOBicon.ico" if getattr(sys, 'frozen', False) else Path(__file__).parent / "BOBicon.ico"
+            self.dialog.iconbitmap(str(icon_path))
+        except Exception:
+            pass
+        
         # Main container
         self.main_container = ctk.CTkFrame(self.dialog, fg_color="transparent")
         self.main_container.pack(fill="both", expand=True, padx=20, pady=20)
@@ -1222,6 +1231,15 @@ class SerialPortDialog:
         self.dialog.geometry("450x400")
         self.dialog.transient(parent)
         self.dialog.grab_set()
+        
+        # Titlebar icoon - exact zoals main_window
+        try:
+            from pathlib import Path
+            import sys
+            icon_path = Path(sys.executable).parent / "BOBicon.ico" if getattr(sys, 'frozen', False) else Path(__file__).parent / "BOBicon.ico"
+            self.dialog.iconbitmap(str(icon_path))
+        except Exception:
+            pass
         
         ctk.CTkLabel(
             self.dialog,

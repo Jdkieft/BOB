@@ -62,11 +62,18 @@ class SettingsDialog(ctk.CTkToplevel):
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
-
+        
         self.update_idletasks()
         x = (self.winfo_screenwidth()  // 2) - 260
         y = (self.winfo_screenheight() // 2) - 370
         self.geometry(f"520x740+{x}+{y}")
+        
+        # Titlebar icoon - exact zoals main_window
+        try:
+            icon_path = Path(sys.executable).parent / "BOBicon.ico" if getattr(sys, 'frozen', False) else Path(__file__).parent / "BOBicon.ico"
+            self.iconbitmap(str(icon_path))
+        except Exception:
+            pass
 
         self._build_ui()
         self._start_status_refresh()
