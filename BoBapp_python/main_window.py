@@ -24,12 +24,14 @@ from config_manager import ConfigManager
 from serial_manager import SerialManager
 from audio_manager import AudioManager
 from spotify_manager import SpotifyManager
+from update_manager import UpdateManager
 
 # Import GUI components
 from button_widget import ButtonWidget
 from slider_widget import SliderWidget, AppPool  # AppPool nodig voor drag-and-drop
 from dialogs import ButtonConfigDialog
 from dialogs_settings import SettingsDialog
+from dialog_update import UpdateDialog
 
 # Import constants
 from constants import (
@@ -38,7 +40,8 @@ from constants import (
     FONT_HEADER,
     MSG_NO_DEVICES,
     COLOR_BACKGROUND_LIGHT, COLOR_BACKGROUND_DARK,
-    COLOR_SUCCESS, COLOR_ERROR
+    COLOR_SUCCESS, COLOR_ERROR,
+    APP_VERSION, GITHUB_REPO
 )
 
 
@@ -97,6 +100,15 @@ class StreamDeckManager(ctk.CTk):
         # Wordt pas geïnitialiseerd als er daadwerkelijk media speelt
         self.spotify_manager = None
         self._spotify_init_scheduled = False
+        
+        # Update Manager
+        self.update_manager = UpdateManager(
+            current_version=APP_VERSION,
+            github_repo=GITHUB_REPO,
+            check_interval_hours=0.033  # ~2 minuten (0.033 uur = 2 min) voor testing
+        )
+        self.update_manager.set_callback(self._on_update_available)
+        self.update_manager.start_auto_check()
         
         # Register callbacks voor berichten van Pico
         self.serial_manager.set_callback('BTN_PRESS', self._handle_pico_button_press)
@@ -1538,6 +1550,86 @@ class StreamDeckManager(ctk.CTk):
             # Sluit window
             self.destroy()
     
+    # ========================================================================
+    # UPDATE SYSTEM
+    # ========================================================================
+    
+    def _on_update_available(self, update_info: dict):
+        """Called when update is available."""
+        print(f"✨ Update available: v{update_info['version']}")
+        self.after(0, self._show_update_dialog, update_info)
+    
+    def _show_update_dialog(self, update_info: dict):
+        """Show update notification dialog."""
+        UpdateDialog(
+            self,
+            update_info,
+            current_version=APP_VERSION,
+            on_update=self._handle_update_download,
+            on_dismiss=lambda: print("🔔 Remind later"),
+            on_skip=self.update_manager.dismiss_update
+        )
+    
+    def _handle_update_download(self):
+        """Download and install update."""
+        print("📥 Starting download...")
+        
+        def download_in_background():
+            try:
+                installer_path = self.update_manager.download_update()
+                
+                if installer_path:
+                    print(f"✅ Downloaded: {installer_path}")
+                    self.after(0, self._confirm_install, installer_path)
+                else:
+                    print("❌ Download failed")
+                    self.after(0, self._show_download_error)
+            except Exception as e:
+                print(f"❌ Error: {e}")
+                self.after(0, self._show_download_error)
+        
+        import threading
+        threading.Thread(target=download_in_background, daemon=True).start()
+    
+    def _confirm_install(self, installer_path):
+        """Ask confirmation and install."""
+        from tkinter import messagebox
+        
+        result = messagebox.askyesno(
+            "Install Update",
+            f"Update downloaded!\n\n"
+            f"Location: {installer_path}\n\n"
+            f"BOB will close to install the update.\n\n"
+            f"Continue?",
+            icon='question'
+        )
+        
+        if result:
+            if self.update_manager.install_update(installer_path):
+                print("🚀 Starting installer...")
+                self._quit_app()
+            else:
+                messagebox.showerror(
+                    "Error",
+                    f"Could not start installer.\n\n"
+                    f"Please run manually:\n{installer_path}"
+                )
+    
+    def _show_download_error(self):
+        """Show download error."""
+        from tkinter import messagebox
+        
+        messagebox.showerror(
+            "Download Error",
+            "Could not download the update.\n\n"
+            "Possible causes:\n"
+            "- No internet connection\n"
+            "- Firewall blocking download\n"
+            "- GitHub temporarily unavailable\n\n"
+            "Try again later or download from GitHub.",
+            icon='error'
+        )
+    
     def _on_closing(self):
         """
         Handle window close event - minimaliseer naar tray.
@@ -1548,4 +1640,3 @@ class StreamDeckManager(ctk.CTk):
         """
         # Normale sluiting -> naar tray
         self._minimize_to_tray()
-

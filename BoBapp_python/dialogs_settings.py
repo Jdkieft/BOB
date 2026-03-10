@@ -17,6 +17,7 @@ import customtkinter as ctk
 from typing import Optional, Callable
 
 from autostart_manager import AutostartManager
+from constants import APP_VERSION
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -49,6 +50,7 @@ class SettingsDialog(ctk.CTkToplevel):
     ):
         super().__init__(parent)
 
+        self.parent = parent  # Store parent reference
         self.serial_manager   = serial_manager
         self.config_manager   = config_manager
         self.on_port_selected = on_port_selected
@@ -56,15 +58,15 @@ class SettingsDialog(ctk.CTkToplevel):
         self.on_import        = on_import
 
         self.title("⚙️ Instellingen")
-        self.geometry("520x640")
+        self.geometry("520x740")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
 
         self.update_idletasks()
         x = (self.winfo_screenwidth()  // 2) - 260
-        y = (self.winfo_screenheight() // 2) - 320
-        self.geometry(f"520x640+{x}+{y}")
+        y = (self.winfo_screenheight() // 2) - 370
+        self.geometry(f"520x740+{x}+{y}")
 
         self._build_ui()
         self._start_status_refresh()
@@ -82,6 +84,8 @@ class SettingsDialog(ctk.CTkToplevel):
         self._section_startup(scroll)
         self._spacer(scroll)
         self._section_config(scroll)
+        self._spacer(scroll)
+        self._section_about(scroll)
 
         ctk.CTkButton(
             self,
@@ -244,6 +248,51 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="right", expand=True, fill="x")
 
     # ------------------------------------------------------------------ #
+    #  Sectie: About                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _section_about(self, parent):
+        frame = self._make_section(parent, "ℹ️ About")
+
+        # Version info
+        version_row = ctk.CTkFrame(frame, fg_color="transparent")
+        version_row.pack(fill="x", padx=15, pady=(5, 8))
+
+        ctk.CTkLabel(
+            version_row, text="Version:",
+            font=("Roboto", 12, "bold"), width=80, anchor="w"
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            version_row, text=f"v{APP_VERSION}",
+            font=("Roboto Mono", 12), anchor="w"
+        ).pack(side="left")
+
+        # Check for updates button
+        ctk.CTkButton(
+            frame,
+            text="🔍 Check for Updates",
+            command=self._manual_check_updates,
+            height=42,
+            font=("Roboto", 12, "bold"),
+            fg_color=self.C_BTN_MUTED,
+            hover_color=self.C_BTN_HOVER,
+            text_color=self.C_BTN_TXT
+        ).pack(fill="x", padx=15, pady=(0, 8))
+
+        # GitHub link
+        ctk.CTkButton(
+            frame,
+            text="🌐 View on GitHub",
+            command=self._open_github,
+            height=42,
+            font=("Roboto", 12, "bold"),
+            fg_color=self.C_BTN_MUTED,
+            hover_color=self.C_BTN_HOVER,
+            text_color=self.C_BTN_TXT
+        ).pack(fill="x", padx=15, pady=(0, 15))
+
+    # ------------------------------------------------------------------ #
     #  Handlers                                                            #
     # ------------------------------------------------------------------ #
 
@@ -284,6 +333,46 @@ class SettingsDialog(ctk.CTkToplevel):
     def _do_import(self):
         if self.on_import:
             self.on_import()
+
+    def _manual_check_updates(self):
+        """Manually trigger update check."""
+        if hasattr(self.parent, 'update_manager'):
+            print("🔍 Manual update check triggered")
+            
+            # Disable button tijdens check
+            # Note: we moeten de button widget opslaan als instance variable
+            # voor nu gewoon direct checken
+            
+            # Check in background thread
+            import threading
+            def check_thread():
+                has_update = self.parent.update_manager.check_for_updates(force=True)
+                
+                # Show result on main thread
+                self.after(0, lambda: self._show_check_result(has_update))
+            
+            threading.Thread(target=check_thread, daemon=True).start()
+            
+            # Sluit dialog zodat update dialog kan verschijnen
+            self.destroy()
+        else:
+            print("⚠️ Update manager not available")
+    
+    def _show_check_result(self, has_update: bool):
+        """Show result of update check."""
+        if not has_update:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "No Updates",
+                f"You're running the latest version (v{APP_VERSION})!",
+                icon='info'
+            )
+
+    def _open_github(self):
+        """Open GitHub repository in browser."""
+        import webbrowser
+        from constants import GITHUB_REPO
+        webbrowser.open(f"https://github.com/{GITHUB_REPO}")
 
     # ------------------------------------------------------------------ #
     #  Status refresh                                                      #
