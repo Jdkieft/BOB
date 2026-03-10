@@ -195,5 +195,30 @@ assign this action"""
 # Appversion & Updates
 # ============================================================================
 
-APP_VERSION = "0.12"           # Your current version
+# Base version - wordt overschreven als er een update is geïnstalleerd
+_BASE_VERSION = "0.15"
+
+# Probeer geïnstalleerde versie uit config te laden
+def _get_app_version():
+    """Haal de app versie op - uit config als beschikbaar, anders base version."""
+    try:
+        from config_manager import get_config_directory
+        import json
+        from pathlib import Path
+        
+        config_dir = get_config_directory()
+        config_file = config_dir / "streamdeck_config.json"
+        
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                installed_version = config.get('installed_version')
+                if installed_version:
+                    return installed_version
+    except Exception:
+        pass  # Als het niet lukt, gebruik base version
+    
+    return _BASE_VERSION
+
+APP_VERSION = _get_app_version()
 GITHUB_REPO = "jdkieft/BOB"    # Your GitHub repo

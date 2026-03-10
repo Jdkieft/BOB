@@ -79,6 +79,38 @@ class ConfigManager:
             from constants import DEFAULT_MODES
             self.config['num_modes'] = DEFAULT_MODES
             self.save()
+        
+        # Update installed_version als _BASE_VERSION nieuwer is
+        # Dit vangt handmatige installaties op
+        self._update_version_if_newer()
+    
+    def _update_version_if_newer(self):
+        """Update installed_version als _BASE_VERSION nieuwer is."""
+        try:
+            from constants import _BASE_VERSION
+            
+            installed = self.config.get('installed_version')
+            if not installed:
+                # Eerste keer - sla base version op
+                self.config['installed_version'] = _BASE_VERSION
+                self.save()
+                print(f"💾 Initial version set to {_BASE_VERSION}")
+                return
+            
+            # Vergelijk versies
+            def version_tuple(v):
+                return tuple(map(int, v.split('.')))
+            
+            try:
+                if version_tuple(_BASE_VERSION) > version_tuple(installed):
+                    self.config['installed_version'] = _BASE_VERSION
+                    self.save()
+                    print(f"💾 Version updated from {installed} to {_BASE_VERSION}")
+            except:
+                pass  # Bij fout in versie parsing, negeer
+                
+        except Exception as e:
+            print(f"⚠️ Could not update version: {e}")
     
     def get_num_modes(self) -> int:
         """
@@ -354,3 +386,28 @@ class ConfigManager:
     # Volumes worden niet opgeslagen/hersteld om te voorkomen dat oude waardes
     # het volume verstoren bij opstarten. De Pico behoudt zijn slider-posities
     # en de PC leest het actuele volume uit bij gebruik.
+    
+    def get_installed_version(self) -> str:
+        """
+        Haal de geïnstalleerde versie op uit config.
+        
+        Deze versie wordt opgeslagen na een succesvolle update.
+        Als niet aanwezig, gebruik APP_VERSION uit constants.
+        
+        Returns:
+            Versie string (bijv. "0.15")
+        """
+        return self.config.get('installed_version', None)
+    
+    def set_installed_version(self, version: str) -> None:
+        """
+        Sla de geïnstalleerde versie op in config.
+        
+        Dit wordt aangeroepen na een succesvolle update installatie.
+        
+        Args:
+            version: Versie string (bijv. "0.15")
+        """
+        self.config['installed_version'] = version
+        self.save()
+        print(f"✅ Installed version set to {version}")

@@ -71,6 +71,15 @@ class UpdateDialog(ctk.CTkToplevel):
         y = (self.winfo_screenheight() // 2) - 450
         self.geometry(f"600x900+{x}+{y}")
         
+        # Titlebar icoon - exact zoals main_window
+        try:
+            from pathlib import Path
+            import sys
+            icon_path = Path(sys.executable).parent / "BOBicon.ico" if getattr(sys, 'frozen', False) else Path(__file__).parent / "BOBicon.ico"
+            self.iconbitmap(str(icon_path))
+        except Exception:
+            pass
+        
         # Build UI
         self._create_ui()
     
